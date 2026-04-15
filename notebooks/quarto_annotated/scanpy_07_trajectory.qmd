@@ -9,19 +9,46 @@ jupyter:
     name: scanpy
 ---
 
+::::callout-note
+## Note
 
-<div>
+Code chunks run Python commands unless it starts with `%%bash`, in
+which case, those chunks run shell commands.
 
-> **Note**
->
-> Code chunks run Python commands unless it starts with `%%bash`, in
-> which case, those chunks run shell commands.
-
-</div>
+::::
 
 Partly following this PAGA
 [tutorial](https://scanpy-tutorials.readthedocs.io/en/latest/paga-paul15.html)
 with some modifications.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Trajectory inference reconstructs developmental pathways from snapshot single-cell data.** Imagine trying to understand how a caterpillar becomes a butterfly by examining many individuals at different life stages simultaneously, rather than watching one transform over time.
+
+**The biological challenge:**
+- Single-cell RNA-seq gives us a **snapshot** of cells at one moment
+- But biological processes are **dynamic**: development, differentiation, activation, disease progression
+- Cells exist along a continuum of states, not as discrete types
+- **Question**: Can we reconstruct temporal processes from spatial (gene expression) relationships?
+
+**Trajectory inference assumes:**
+1. **Developmental relationships**: Similar cells are at similar developmental stages
+2. **Gradual transitions**: Cells progress smoothly through gene expression states
+3. **Continuous processes**: Differentiation follows paths through gene expression space
+
+**Applications:**
+- **Development**: How do stem cells differentiate into specific cell types?
+- **Disease progression**: How do healthy cells transform into disease states?
+- **Cell activation**: How do resting immune cells become activated?
+- **Reprogramming**: How do differentiated cells revert to stem-like states?
+
+**Our example: Hematopoiesis**
+- **Hematopoietic stem cells (HSCs)** give rise to all blood cell types
+- Multiple lineages: erythrocytes (RBCs), megakaryocytes (platelets), myeloid cells (monocytes, granulocytes), lymphoid cells (T cells, B cells)
+- Well-characterized biology—perfect for testing trajectory methods
+- Complex branching structure with multiple endpoints
+:::
 
 ## Loading libraries
 
@@ -58,32 +85,55 @@ sc.settings.set_figure_params(dpi=100, frameon=False, figsize=(5, 5), facecolor=
 In order to speed up the computations during the exercises, we will be
 using a subset of a bone marrow dataset (originally containing about
 100K cells). The bone marrow is the source of adult immune cells, and
-contains virtually all differentiation stages of cell from the immune
+contains virtually all differentiation stages of cells from the immune
 system which later circulate in the blood to all other organs.
 
 ![](../figs/hematopoiesis.png)
 
+::: {.callout-tip}
+## Biological Relevance
+
+**Bone marrow contains the full spectrum of blood cell development**, making it ideal for trajectory inference:
+
+**Hematopoietic hierarchy:**
+1. **HSCs** (Hematopoietic Stem Cells): Self-renewing, multipotent
+2. **MPPs** (Multipotent Progenitors): Can become myeloid or lymphoid
+3. **Committed progenitors**: Lineage-restricted (e.g., erythroid, megakaryocyte)
+4. **Mature cells**: Fully differentiated (RBCs, platelets, immune cells)
+
+**Why bone marrow for trajectory inference?**
+- **All stages present simultaneously**: From stem cells to mature cells
+- **Well-characterized markers**: Known genes for each cell type
+- **Branching structure**: Multiple lineages from common origin
+- **Continuous process**: Cells at all intermediate stages
+- **Biological ground truth**: Decades of research validate the developmental paths
+
+**Key cell types in our data:**
+- **HSCs/progenitors**: CD34+ cells
+- **Erythrocyte lineage**: Red blood cells (Alas2+)
+- **Megakaryocyte lineage**: Platelet precursors (Pf4+)
+- **Myeloid lineage**: Monocytes (Cst3+), granulocytes (Ltf+), dendritic cells (Siglech+)
+- **Lymphoid lineage**: T cells (Cd3e+), B cells (Ms4a1+)
+:::
+
 If you have been using the **Seurat**, **Bioconductor** or **Scanpy**
-toolkits with your own data, you need to reach to the point where can
-find get:
+toolkits with your own data, you need to reach the point where you can get:
 
--   A dimensionality reduction where to perform the trajectory (for
-    example: PCA, ICA, MNN, harmony, Diffusion Maps, UMAP)
--   The cell clustering information (for example: from Louvain, k-means)
--   A KNN/SNN graph (this is useful to inspect and sanity-check your
-    trajectories)
+- A dimensionality reduction where to perform the trajectory (for example: PCA, ICA, MNN, Harmony, Diffusion Maps, UMAP)
+- The cell clustering information (for example: from Louvain, k-means)
+- A KNN/SNN graph (this is useful to inspect and sanity-check your trajectories)
 
-In this case, all the data has been preprocessed with Seurat with
+In this case, all the data has been preprocessed with Seurat using
 standard pipelines. In addition there was some manual filtering done to
 remove clusters that are disconnected and cells that are hard to
 cluster, which can be seen in this
 [script](https://github.com/NBISweden/workshop-scRNAseq/blob/main/scripts/data_processing/slingshot_preprocessing.Rmd)
 
-The file trajectory_scanpy_filtered.h5ad was converted from the Seurat
+The file `trajectory_scanpy_filtered.h5ad` was converted from the Seurat
 object using the SeuratDisk package. For more information on how it was
 done, have a look at the script:
 [convert_to_h5ad.R](https://github.com/NBISweden/workshop-scRNAseq/blob/main/scripts/data_processing/convert_to_h5ad.R)
-in the github repo.
+in the GitHub repo.
 
 You can download the data with the commands:
 
@@ -111,8 +161,8 @@ if not os.path.exists(path_file):
 
 ## Reading data
 
-We already have pre-computed and subsetted the dataset (with 6688 cells
-and 3585 genes) following the analysis steps in this course. We then
+We already have pre-computed and subsetted the dataset (with 6,688 cells
+and 3,585 genes) following the analysis steps in this course. We then
 saved the objects, so you can use common tools to open and start to work
 with them (either in R or Python).
 
@@ -124,38 +174,38 @@ adata.var
 
 ```{python}
 #| label: check-data
-# check what you have in the X matrix, should be lognormalized counts.
+# check what you have in the X matrix, should be log-normalized counts.
 print(adata.X[:10,:10])
 ```
 
 ## Explore the data
 
-There is a umap and clusters provided with the object, first plot some
-information from the previous analysis onto the umap.
+There is a UMAP and clusters provided with the object. First plot some
+information from the previous analysis onto the UMAP.
 
 ```{python}
 #| label: plot-umap
 sc.pl.umap(adata, color = ['clusters','dataset','batches','Phase'],legend_loc = 'on data', legend_fontsize = 'xx-small', ncols = 2)
 ```
 
-It is crucial that you performing analysis of a dataset understands what
+It is crucial that anyone performing analysis of a dataset understands what
 is going on, what are the clusters you see in your data and most
-importantly How are the clusters related to each other?. Well, let's
+importantly, **how are the clusters related to each other?** Well, let's
 explore the data a bit. With the help of this table, write down which
 cluster numbers in your dataset express these key markers.
 
-  Marker    Cell Type
-  --------- ----------------------------
-  Cd34      HSC progenitor
-  Ms4a1     B cell lineage
-  Cd3e      T cell lineage
-  Ltf       Granulocyte lineage
-  Cst3      Monocyte lineage
-  Cpa3      Mast Cell/Basophil lineage
-  Alas2     RBC lineage
-  Siglech   Dendritic cell lineage
-  C1qc      Macrophage cell lineage
-  Pf4       Megakaryocyte cell lineage
+| Marker | Cell Type |
+|--------|-----------|
+| Cd34 | HSC progenitor |
+| Ms4a1 | B cell lineage |
+| Cd3e | T cell lineage |
+| Ltf | Granulocyte lineage |
+| Cst3 | Monocyte lineage |
+| Cpa3 | Mast Cell/Basophil lineage |
+| Alas2 | RBC lineage |
+| Siglech | Dendritic cell lineage |
+| C1qc | Macrophage cell lineage |
+| Pf4 | Megakaryocyte cell lineage |
 
 ```{python}
 #| label: plot-markers
@@ -165,9 +215,31 @@ sc.pl.umap(adata, color = markers, use_raw = False, ncols = 4)
 
 ## Rerun analysis in Scanpy
 
-Redo clustering and umap using the basic Scanpy pipeline. Use the
-provided "X_harmony_Phase" dimensionality reduction as the starting
+Redo clustering and UMAP using the basic Scanpy pipeline. Use the
+provided `X_harmony_Phase` dimensionality reduction as the starting
 point.
+
+::: {.callout-note}
+## Why run this code?
+
+**We reprocess the data in Scanpy to ensure consistency and optimize for trajectory inference:**
+
+**Why recalculate neighbors and UMAP?**
+- The data was preprocessed in Seurat with different parameters
+- PAGA works best with Scanpy's neighbor calculation
+- We can optimize parameters (n_neighbors, UMAP settings) for trajectory visualization
+- Ensures reproducibility within the Scanpy ecosystem
+
+**Using `X_harmony_Phase` as input:**
+- Batch-corrected embedding that accounts for dataset and cell cycle effects
+- Removes technical variation while preserving biological trajectories
+- Better starting point than raw PCA for multi-sample data
+
+**Why calculate highly variable genes?**
+- Even though we won't use them immediately, we need mean expression and dispersion for each gene
+- This metadata is used by downstream trajectory analysis tools
+- Helps identify genes driving differentiation
+:::
 
 ```{python}
 #| label: process
@@ -190,16 +262,37 @@ sc.pl.umap(adata, color = markers, use_raw = False, ncols = 4)
 
 # Redo clustering as well
 sc.tl.leiden(adata, key_added = "leiden_1.0", resolution = 1.0, random_state=137) # default resolution is 1.0
-sc.tl.leiden(adata, key_added = "leiden_1.2", resolution = 1.2, random_state=137) # default resolution is 1.0
-sc.tl.leiden(adata, key_added = "leiden_1.4", resolution = 1.4, random_state=137) # default resolution is 1.0
+sc.tl.leiden(adata, key_added = "leiden_1.2", resolution = 1.2, random_state=137) 
+sc.tl.leiden(adata, key_added = "leiden_1.4", resolution = 1.4, random_state=137) 
 
-#sc.tl.louvain(adata, key_added = "leiden_1.0") # default resolution in 1.0
 sc.pl.umap(adata, color = ['leiden_1.0', 'leiden_1.2', 'leiden_1.4','clusters'],legend_loc = 'on data', legend_fontsize = 'xx-small', ncols =2)
 ```
 
+::: {.callout-note}
+## Why run this code?
+
+**Clustering resolution affects trajectory inference significantly:**
+
+**Different resolutions reveal different biological scales:**
+- **Low resolution (1.0)**: Broad cell types (myeloid vs. lymphoid)
+- **Medium resolution (1.2)**: Lineage-committed progenitors
+- **High resolution (1.4)**: Detailed cell states and subtypes
+
+**For trajectory inference, we want:**
+- Enough resolution to separate distinct lineages
+- Not so much that we over-split continuous populations
+- Balance between biological detail and interpretability
+
+**The edges (`edges=True`):**
+- Show the k-nearest neighbor graph connections
+- Reveal which clusters are neighbors in gene expression space
+- Help validate that trajectories follow biological paths
+- Spurious edges between unrelated clusters indicate problems
+:::
+
 ```{python}
 #| label: annotate
-#Rename clusters with really clear markers, the rest are left unlabelled.
+#Rename clusters with really clear markers, the rest are left unlabeled.
 
 annot = pd.DataFrame(adata.obs['leiden_1.4'].astype('string'))
 annot[annot['leiden_1.4'] == '10'] = '10_megakaryo' #Pf4
@@ -207,7 +300,7 @@ annot[annot['leiden_1.4'] == '16'] = '16_macro'  #C1qc
 annot[annot['leiden_1.4'] == '12'] = '12_eryth' #Alas2
 annot[annot['leiden_1.4'] == '17'] = '17_dend' #Siglech
 annot[annot['leiden_1.4'] == '13'] = '13_mast_baso' #Cpa3
-annot[annot['leiden_1.4'] == '5'] = '5_mono' #Cts3
+annot[annot['leiden_1.4'] == '5'] = '5_mono' #Cst3
 annot[annot['leiden_1.4'] == '2'] = '2_gran' #Ltf
 annot[annot['leiden_1.4'] == '14'] = '14_TC' #Cd3e
 annot[annot['leiden_1.4'] == '15'] = '15_BC' #Ms4a1
@@ -220,9 +313,6 @@ adata.obs['annot']=annot['leiden_1.4'].astype('category')
 sc.pl.umap(adata, color = 'annot',legend_loc = 'on data', legend_fontsize = 'xx-small', ncols =2)
 
 annot.value_counts()
-#type(annot)
-
-# astype('category')
 ```
 
 ```{python}
@@ -233,10 +323,38 @@ sc.pl.embedding(adata, basis='X_umap_old', color = 'annot',legend_loc = 'on data
 
 ## Run PAGA
 
-Use the clusters from leiden clustering with `leiden_1.4` and run PAGA.
+Use the clusters from Leiden clustering with `leiden_1.4` and run PAGA.
 PAGA is very good at revealing global topologies of the data that might
 be distorted in a UMAP. First we create the graph and initialize the
 positions using the UMAP.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**PAGA (Partition-based Graph Abstraction) is specifically designed for trajectory inference** and addresses key limitations of UMAP/tSNE for understanding developmental processes.
+
+**Why UMAP/tSNE can mislead for trajectories:**
+- **Distorts global relationships**: Preserves local neighborhoods but distorts long-range distances
+- **Can create false gaps**: Continuous processes may appear disconnected
+- **Can create false connections**: Unrelated populations may appear adjacent
+
+**What PAGA does:**
+1. **Abstraction**: Represents each cluster as a node in a graph
+2. **Connectivity**: Computes statistical confidence for edges between clusters
+3. **Topology**: Reveals the global structure (linear, branching, cyclic)
+4. **Interpretability**: Graph structure directly represents biological relationships
+
+**PAGA edges represent:**
+- **Strength**: Number of cells connecting two clusters (edge thickness)
+- **Confidence**: Statistical significance of connection
+- **Direction** (optional): With RNA velocity or pseudotime ordering
+
+**Applications:**
+- Visualizing complex, branching differentiation processes
+- Identifying lineage relationships
+- Guiding downstream trajectory analysis
+- Creating "roadmaps" of cellular states
+:::
 
 ```{python}
 #| label: paga
@@ -247,12 +365,12 @@ sc.tl.paga(adata, groups='annot')
 sc.pl.paga(adata, color='annot', edge_width_scale = 0.3)
 ```
 
-As you can see, we have edges between many clusters that we know are are
+As you can see, we have edges between many clusters that we know are
 unrelated, so we may need to clean up the data a bit more.
 
 ## Filtering graph edges
 
-First, lets explore the graph a bit. We plot the umap with the graph
+First, let's explore the graph a bit. We plot the UMAP with the graph
 edges on top. The edges signify neighborhood between cells in the
 KNN-graph.
 
@@ -261,12 +379,44 @@ KNN-graph.
 sc.pl.umap(adata, edges=True, color = 'annot', legend_loc= 'on data', legend_fontsize= 'xx-small')
 ```
 
-We have many edges in the graph between unrelated clusters, so lets try
+We have many edges in the graph between unrelated clusters, so let's try
 recalculating the graph with fewer neighbors. You can experiment with
 calculating different numbers of neighbors to see how it affects the
-graph and the connection between cells and nodes. Choosing too few
-neighbors however (\<=5) will lead to problems with the downstream
+graph and the connections between cells and nodes. Choosing too few
+neighbors however (≤5) will lead to problems with the downstream
 analysis for this dataset, as the graph becomes too sparse.
+
+::: {.callout-note}
+## Why run this code?
+
+**The number of neighbors (`n_neighbors`) critically affects graph connectivity and trajectory quality:**
+
+**Too many neighbors (>20):**
+- Graph becomes over-connected
+- Unrelated cell types appear connected
+- Spurious edges create biologically implausible trajectories
+- Example: Direct connections between T cells and erythrocytes (biologically impossible)
+
+**Too few neighbors (<5):**
+- Graph becomes fragmented
+- True biological transitions are lost
+- Cells become isolated
+- Cannot trace continuous developmental paths
+
+**Optimal neighbors for trajectory inference:**
+- **Goldilocks zone**: Typically 5-15 neighbors
+- Connects cells along true developmental paths
+- Minimizes spurious connections
+- Balance: biological continuity vs. specificity
+
+**How to choose:**
+- Visualize edges on UMAP
+- Check if connected clusters are biologically plausible
+- Verify known lineage relationships are preserved
+- Ensure no impossible connections (e.g., mature lymphoid → myeloid)
+
+We're reducing from 20 to 8 neighbors to remove spurious edges while maintaining developmental connections.
+:::
 
 ```{python}
 #| label: redo-graph
@@ -291,7 +441,33 @@ sc.pl.paga(adata, color='annot', edge_width_scale = 0.3)
 ## Embedding using PAGA-initialization
 
 We can now redraw the graph using another starting position from the
-paga layout. The following is just as well possible for a UMAP.
+PAGA layout. The following is just as well possible for a UMAP.
+
+::: {.callout-note}
+## Why run this code?
+
+**PAGA-initialized embeddings improve trajectory visualization:**
+
+**Standard UMAP initialization:**
+- Random or spectral initialization
+- Optimizes for local neighborhood preservation
+- Can distort global structure
+- May place related clusters far apart
+
+**PAGA-initialized layout:**
+- Uses PAGA graph structure as initial positions
+- Places connected clusters close together
+- Preserves developmental relationships
+- Reveals lineage structure more clearly
+
+**Result:**
+- Cells are embedded respecting their lineage relationships
+- Progenitors appear central, differentiated cells peripheral
+- Branching points are visually apparent
+- More interpretable for trajectory analysis
+
+This creates a "developmental map" where spatial position reflects biological relationships.
+:::
 
 ```{python}
 #| label: draw-graph-paga
@@ -311,25 +487,55 @@ sc.pl.paga_compare(
     legend_fontsize=12, fontsize=12, frameon=False, edges=True)
 ```
 
-<div>
+::: {.callout-important}
+## Discuss
 
-> **Discuss**
->
-> Does this graph fit the biological expectations given what you know of
-> hematopoesis. Please have a look at the figure in Section 2 and
-> compare to the paths you now have.
-
-</div>
+Does this graph fit the biological expectations given what you know of
+hematopoiesis? Please have a look at the figure in Section 2 and
+compare to the paths you now have.
+:::
 
 ## Detecting gene changes along trajectories
 
 We can reconstruct gene changes along PAGA paths for a given set of
-genes. For this we calculate the diffusion pseudotime, which orders
+genes. For this we calculate the **diffusion pseudotime**, which orders
 cells on a pseudotemporal axis based on their expression profile.
 
 Choose a root cell for diffusion pseudotime. We have 3 progenitor
-clusters, but cluster 2 seems the most clear based on the Cd34 Marker,
-so we chose that cluster as starting timepoint for our pseudotime.
+clusters, but cluster 0 seems the most clear based on the Cd34 marker,
+so we choose that cluster as starting timepoint for our pseudotime.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Pseudotime is a computational estimate of "developmental time" or "progression" along a biological process.**
+
+**What pseudotime represents:**
+- **NOT calendar time**: Cells were collected simultaneously
+- **NOT cell age**: How long a cell has existed
+- **Developmental progress**: How far along a differentiation path a cell has progressed
+
+**Analogy**: Imagine photographing many people aged 0-100 years simultaneously. By arranging them by appearance (wrinkles, height, gray hair), you can order them by age—this is pseudotime.
+
+**Diffusion pseudotime specifically:**
+- Based on **random walk** distances through the cell-cell graph
+- Measures how "far" cells are from a root (origin) cell
+- Cells close to the root = early in development (low pseudotime)
+- Cells far from the root = late in development (high pseudotime)
+- Respects the graph structure (developmental paths)
+
+**Choosing the root:**
+- Critical decision—sets the "starting point" of development
+- Should be the earliest/most progenitor-like population
+- **Cd34+ cells** are classical HSC markers → good root choice
+- Incorrect root → reversed or nonsensical pseudotime
+
+**What you can do with pseudotime:**
+- Order cells by developmental progression
+- Identify genes that change during differentiation
+- Find regulatory programs at specific stages
+- Compare dynamics between lineages
+:::
 
 ```{python}
 #| label: pseudotime
@@ -345,29 +551,105 @@ Use the full raw data for visualization.
 sc.pl.draw_graph(adata, color=['annot', 'dpt_pseudotime'], legend_loc='on data', legend_fontsize= 'x-small')
 ```
 
-<div>
+::: {.callout-important}
+## Discuss
 
-> **Discuss**
->
-> The pseudotime represents the distance of every cell to the starting
-> cluster. Have a look at the pseudotime plot, how well do you think it
-> represents actual developmental time? What does it represent?
+The pseudotime represents the distance of every cell to the starting
+cluster. Have a look at the pseudotime plot. How well do you think it
+represents actual developmental time? What does it represent?
 
-</div>
+**Consider:**
+- Are mature cell types at high pseudotime?
+- Are progenitors at low pseudotime?
+- Do cells along the same lineage have increasing pseudotime?
+- What about cells from different lineages—can their pseudotimes be directly compared?
+:::
 
-## Using Cellrank to investigate gene expression changes along specific trajectories
+## Using CellRank to investigate gene expression changes along specific trajectories
 
 Now that we have calculated pseudotime, we are interested in what genes
-might change during a certain lineages differentiation trajectory. To
-analyse this, we use Cellrank - a Python library that computes
-probablistic cell fate mappings. It basically models the probabilities
+might change during a certain lineage's differentiation trajectory. To
+analyze this, we use **CellRank**—a Python library that computes
+probabilistic cell fate mappings. It basically models the probabilities
 for each cell to end up in a specific terminal state (in our case, fully
 differentiated cell types).
 
-Cellrank can use different metrics to calculate a transition matrix,
+::: {.callout-tip}
+## Biological Relevance
+
+**CellRank addresses a key limitation of simple pseudotime: branching trajectories.**
+
+**The problem with global pseudotime:**
+- A single pseudotime value per cell
+- Works well for linear processes (A → B → C)
+- Fails for branching processes:
+  - HSC → erythrocyte vs. HSC → megakaryocyte
+  - Both lineages have similar "distances" from HSC
+  - But they're developing toward **different fates**
+
+**CellRank's solution: Fate probabilities**
+- Each cell gets a probability of reaching each terminal state
+- Example: A progenitor might be 70% likely to become an erythrocyte, 20% megakaryocyte, 10% other
+- Committed cells: 95%+ probability for one fate
+- Multipotent cells: Distributed probabilities across fates
+
+**How CellRank works:**
+1. **Transition matrix**: Models cell-to-cell transition probabilities
+   - Based on pseudotime, RNA velocity, or other metrics
+   - "If a cell is in state A, what's the probability it moves to state B?"
+
+2. **Terminal states**: Automatically identifies or manually sets endpoints
+   - Fully differentiated, stable cell types
+   - Sinks in the developmental landscape
+
+3. **Fate probabilities**: Calculates absorption probabilities
+   - Uses Markov chain mathematics
+   - For each cell: probability of eventually reaching each terminal state
+
+4. **Lineage drivers**: Genes correlated with fate probabilities
+   - High correlation with erythrocyte fate → drives erythrocyte differentiation
+   - Reveals lineage-specific regulatory programs
+
+**Why this matters:**
+- Identify **lineage commitment points** (where fates diverge)
+- Find **lineage-specific genes** (expressed only along one trajectory)
+- Compare **gene dynamics** between lineages
+- Discover **fate determinants** (genes that control cell fate decisions)
+:::
+
+CellRank can use different metrics to calculate a transition matrix,
 such as RNA velocity or pseudotime. As we have calculated pseudotime for
 our dataset above, we will use that for the calculation of our
 transition matrix.
+
+::: {.callout-note}
+## Why run this code?
+
+**Creating a CellRank kernel from pseudotime:**
+
+**What is a kernel?**
+- Encodes **transition probabilities** between cells
+- Based on pseudotime: cells with similar pseudotime are neighbors
+- Direction: cells "move" forward in pseudotime (low → high)
+
+**Transition matrix:**
+- Rows and columns = cells
+- Entry (i, j) = probability of cell i transitioning to cell j
+- Row sums = 1 (each cell must go somewhere)
+- Sparse matrix (most cell-to-cell transitions have zero probability)
+
+**PseudotimeKernel logic:**
+- Cells can transition to neighbors with **higher** pseudotime
+- Transition probability decreases with pseudotime distance
+- Creates directed graph: progenitors → differentiated cells
+- Cannot "go backward" in development
+
+**Alternative kernels:**
+- **VelocityKernel**: Uses RNA velocity (transcriptional dynamics)
+- **CytoTRACEKernel**: Based on differentiation potential
+- **ConnectivityKernel**: Purely based on nearest neighbors
+- Can **combine** multiple kernels for robust predictions
+:::
 
 ```{python}
 #Set up a cellrank kernel 
@@ -375,13 +657,44 @@ pt_kernel = cr.kernels.PseudotimeKernel(adata, time_key='dpt_pseudotime')
 pt_kernel.compute_transition_matrix()
 ```
 
-In order to calculate terminal fates and lineage commitment, cellrank
+In order to calculate terminal fates and lineage commitment, CellRank
 uses estimators like GPCCA. We set up an estimator from our
 PseudotimeKernel (`pt_kernel`) and compute macrostates in our dataset
 (groups of cells with similar transition dynamics).
 
+::: {.callout-note}
+## Why run this code?
+
+**GPCCA (Generalized Perron Cluster Cluster Analysis) identifies macrostates:**
+
+**What are macrostates?**
+- Groups of cells with **similar fate probabilities**
+- Represent stable states in the developmental landscape
+- Include both progenitors and terminal states
+- Based on transition dynamics, not just gene expression
+
+**How GPCCA works:**
+1. **Coarse-graining**: Simplifies the transition matrix
+2. **Spectral decomposition**: Finds dominant transition patterns
+3. **Clustering**: Groups cells by transition similarity
+4. **Macrostate assignment**: Labels cells by their coarse-grained state
+
+**Parameters:**
+- `cluster_key='annot'`: Uses our cell type annotations to guide the analysis
+- `n_states=[10,15]`: Tries different numbers of macrostates, selects optimal
+- `n_cells=50`: Minimum cells per macrostate (prevents tiny, unstable states)
+
+**Why this matters:**
+- Macrostates often correspond to biological cell types or stages
+- Some macrostates = terminal states (fully differentiated)
+- Others = transient states (progenitors, intermediate stages)
+- Provides a hierarchical view of the differentiation process
+
+After fitting, we can identify which macrostates are **initial** (stem/progenitor) vs. **terminal** (differentiated).
+:::
+
 ```{python}
-#Set up an estimator to analyse the kernel
+#Set up an estimator to analyze the kernel
 pt_est =  cr.estimators.GPCCA(pt_kernel)
 
 #Compute macrostates
@@ -389,9 +702,8 @@ pt_est.fit(cluster_key='annot', n_states=[10,15], n_cells=50)
 ```
 
 Now that we have created an estimator and computed macrostates, we can
-either automatically compute our initial and terminal cell states using
-, or we can set them manually. In this case, we will set the initial
-state manually to `0_progen`, but let cellrank predict the terminal
+either automatically compute our initial and terminal cell states, or we can set them manually. In this case, we will set the initial
+state manually to `0_progen`, but let CellRank predict the terminal
 states.
 
 ```{python}
@@ -402,7 +714,7 @@ pt_est.set_initial_states({'0_progen': adata.obs_names[adata.obs['annot'] == '0_
 pt_est.predict_terminal_states(n_states=10, method='top_n', allow_overlap=True)
 ```
 
-Let's plot the initial and terminal states on our single cell graph to
+Let's plot the initial and terminal states on our single-cell graph to
 see how well they correspond to what we would expect.
 
 ```{python}
@@ -436,33 +748,64 @@ scv.pl.scatter(
 )
 
 # Add titles
-ax1.set_title('Macrostates (Forward)')
+ax1.set_title('Initial States (Forward)')
 ax2.set_title('Terminal States (Forward)')
 
 plt.tight_layout()
 plt.show()
 ```
 
-<div>
+::: {.callout-important}
+## Discuss
 
-> **Discuss**
->
-> Are the initial and terminal states predicted as you expected? What
-> deviates from your expectation?
->
-> The results are influenced by a multitude of parameters, such as the
-> PAGA graph connections (mediated by the n_neighbors parameter in
-> sc.pp.neighbors) and the `n_states` parameter in `pt_est.fit`. Feel
-> free to play with these parameters and see how the results change.
+- Are the initial and terminal states predicted as you expected? 
+- What deviates from your expectation?
 
-</div>
+The results are influenced by a multitude of parameters, such as the
+PAGA graph connections (mediated by the `n_neighbors` parameter in
+`sc.pp.neighbors`) and the `n_states` parameter in `pt_est.fit`. Feel
+free to play with these parameters and see how the results change.
+:::
 
 Now that we have calculated our initial and terminal states, we will
-calculate fate probabilities. Cellrank does this by using Markov Chains,
-which calculates the probability for each cell to end up at a given
+calculate **fate probabilities**. CellRank does this by using Markov Chains,
+which calculate the probability for each cell to end up at a given
 terminal state. Later on we will be able to use this information to
 investigate which genes drive differentiation from a progenitor towards
 a certain fully differentiated cell type.
+
+::: {.callout-note}
+## Why run this code?
+
+**Fate probability calculation uses Markov chain absorption probabilities:**
+
+**The mathematics:**
+- Given: Transition matrix T (cell → cell probabilities)
+- Given: Terminal states (absorbing states in the Markov chain)
+- Calculate: For each cell, probability of eventually reaching each terminal state
+
+**Intuition:**
+- Start a random walk from a progenitor cell
+- Follow transition probabilities: cell A → cell B → cell C...
+- Eventually reach a terminal state (erythrocyte, megakaryocyte, etc.)
+- Repeat many times → estimate probability of each outcome
+
+**Parameters:**
+- `use_petsc=False`: Don't use specialized sparse matrix solver (simpler, but slower)
+- `solver="direct"`: Use direct matrix inversion (accurate for small-medium datasets)
+
+**Output stored in `adata.obsm['lineages']`:**
+- One column per terminal state
+- Each cell gets a probability for each fate
+- Probabilities sum to 1 across fates
+- Example: [Erythrocyte: 0.8, Megakaryocyte: 0.15, Other: 0.05]
+
+**Biological interpretation:**
+- **Committed cells**: One fate probability ≈ 1
+- **Bipotent progenitors**: Split between two fates
+- **Multipotent cells**: Distributed across many fates
+- **Transition zones**: Gradient of changing probabilities
+:::
 
 ```{python}
 #Compute and plot cell fate probabilities
@@ -471,14 +814,51 @@ pt_est.plot_fate_probabilities(legend_loc='right', basis='X_draw_graph_fa')
 ```
 
 Now that we have computed the fate probabilities of every cell, we can
-compute **driver genes** - Cellrank does this by correlating fate
+compute **driver genes**—CellRank does this by correlating fate
 probabilities with gene expression, under the assumption that genes that
 have a strong correlation with the fate probabilities of a certain
-lineage might drive differentiatin processes towards the lineages
+lineage might drive differentiation processes towards the lineage's
 terminal state.
 
 Below we will calculate driver genes for the erythrocyte lineage
 (`12_eryth`) and the megakaryocyte lineage (`10_megakaryo`).
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Lineage driver genes are those that determine or execute cell fate decisions.**
+
+**The correlation logic:**
+- **High positive correlation with fate probability** → gene increases as cells commit to that fate
+- These genes may:
+  - **Determine fate**: Transcription factors that activate lineage programs
+  - **Execute fate**: Effector genes specific to that cell type
+  - **Mark fate**: Lineage-specific markers
+
+**Example: Erythrocyte drivers**
+- **Expected**: Hemoglobin genes (Hba, Hbb), erythroid transcription factors (Gata1, Klf1)
+- **Novel findings**: Previously unknown genes correlated with erythroid fate → potential regulators
+
+**Why this works:**
+- Cells committed to erythrocyte fate → high erythrocyte probability
+- These same cells express erythrocyte-specific genes
+- Correlation reveals genes co-varying with fate commitment
+
+**Important caveat:**
+- Correlation ≠ causation
+- A gene could be:
+  - **Driver**: Causes the fate decision
+  - **Marker**: Consequence of the fate decision
+  - **Bystander**: Coincidentally correlated
+- Experimental validation needed to distinguish these
+
+**How CellRank computes this:**
+1. For each gene, get expression across all cells
+2. For each lineage, get fate probabilities across all cells
+3. Calculate Spearman or Pearson correlation
+4. Rank genes by correlation strength
+5. Test statistical significance
+:::
 
 ```{python}
 #Calculate lineage drivers
@@ -489,7 +869,7 @@ drivers_ery_sort = drivers_ery.sort_values(by='12_eryth_corr', ascending=False)
 drivers_mega = pt_est.compute_lineage_drivers(lineages=['10_megakaryo'], cluster_key='annot')
 drivers_mega_sort = drivers_mega.sort_values(by='10_megakaryo_corr', ascending=False)
 
-#Get top 10 eruythrocyte driver genes
+#Get top 10 erythrocyte driver genes
 drivers_ery_sort.head(n=10)
 ```
 
@@ -501,23 +881,63 @@ sc.pl.draw_graph(adata, color=drivers_ery_sort.index.tolist()[1:10], legend_loc=
 ```
 
 ```{python}
-#Also plot the lineage drivers for the granulocyte lineage
+#Also plot the lineage drivers for the megakaryocyte lineage
 sc.pl.draw_graph(adata, color=drivers_mega_sort.index.tolist()[1:10], legend_loc='on data', legend_fontsize= 'x-small', use_raw=False, ncols=3)
 ```
 
-<div>
+::: {.callout-important}
+## Discuss
 
-> **Discuss**
->
-> Discuss amongst yourselves which genes appear to be good markers for
-> the respective lineages and why!
+Discuss amongst yourselves which genes appear to be good markers for
+the respective lineages and why!
 
-</div>
+**Questions to consider:**
+- Do the top drivers make biological sense?
+- Are known lineage markers (e.g., hemoglobin genes for erythrocytes) present?
+- Do you see any unexpected genes? Could they be novel regulators?
+- How specific are the drivers (expressed only in target lineage)?
+- Do drivers appear early (fate determinants) or late (effector genes)?
+:::
 
 Now we want to look at the expression trends for some of the genes we
-just identified as potential drivers over pseudotime. Cellrank uses
-Generalized Additive Models (GAMs) to fit smooth expression curves, so
+just identified as potential drivers over pseudotime. CellRank uses
+**Generalized Additive Models (GAMs)** to fit smooth expression curves, so
 we start by creating such models for our data.
+
+::: {.callout-note}
+## Why run this code?
+
+**GAMs (Generalized Additive Models) fit smooth, non-linear curves to gene expression over pseudotime:**
+
+**Why GAMs?**
+- Gene expression during differentiation is **non-linear**
+- Not a straight line: genes can increase, decrease, peak, or show complex patterns
+- GAMs use **splines** (piecewise polynomial functions) to fit flexible curves
+- Captures biological dynamics better than linear regression
+
+**Parameter:**
+- `n_knots=6`: Number of "joints" in the spline
+  - More knots = more flexible curve (can capture rapid changes)
+  - Fewer knots = smoother curve (reduces overfitting)
+  - 6 is reasonable for most differentiation trajectories
+
+**What GAM fitting does:**
+1. For each gene, along each lineage:
+   - Order cells by pseudotime
+   - Fit a smooth curve through expression values
+   - Estimate confidence intervals
+
+2. Allows us to:
+   - Visualize gene dynamics over developmental time
+   - Identify when genes turn on/off
+   - Find transient expression (genes that peak mid-differentiation)
+   - Compare dynamics between lineages
+
+**Output:**
+- Smooth expression trends for each gene
+- Confidence bands (uncertainty in the fit)
+- Can identify significant temporal patterns
+:::
 
 ```{python}
 #Fit GAMs
@@ -525,9 +945,9 @@ model = cr.models.GAM(adata, n_knots=6)
 ```
 
 Next, we plot some of the interesting genes of the erythrocyte (Car1,
-Atpif1, Vamp5) and megakaryocyte (Cavin2, Pbx1, Ctla2a) lineages. We
+Atpif1, Vamp5) and megakaryocyte (Cavin2, Pbx1, Rab27b) lineages. We
 only plot the genes for their respective lineage, in order to compare
-their expression at different pseudotime points during the lineages
+their expression at different pseudotime points during the lineage's
 developmental trajectory.
 
 ```{python}
@@ -571,20 +991,55 @@ cr.pl.gene_trends(adata,
                   backend='threading')
 ```
 
-<div>
+::: {.callout-important}
+## Discuss
 
-> **Discuss**
->
-> Why do the different lineages in the plots above have different
-> maximum pseudotime values? In how far do you think the gene expression
-> values are comparable across the two lineages?
+- Why do the different lineages in the plots above have different maximum pseudotime values? 
+- In how far do you think the gene expression values are comparable across the two lineages?
 
-</div>
+**Hints:**
+- Pseudotime is relative to the chosen root
+- Different lineages may branch at different points
+- Does pseudotime = 0.5 in erythrocytes mean the same biological stage as pseudotime = 0.5 in megakaryocytes?
+- Think about **lineage-specific pseudotime** vs. **global pseudotime**
+:::
 
 We can also visualize the expression of several genes over pseudotime in
 a single trajectory. Let's do this for the 30 top driver genes of the
 erythrocyte and megakaryocyte lineages. If you have any genes that you
 are interested in, plot these using the code below.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Heatmaps reveal coordinated gene expression programs during differentiation:**
+
+**What to look for:**
+
+**1. Sequential activation:**
+- Early genes (left side): Expressed in progenitors
+- Late genes (right side): Expressed in mature cells
+- Reveals temporal order of differentiation events
+
+**2. Gene modules:**
+- Co-expressed genes cluster together (rows)
+- May represent functional modules (e.g., ribosome biogenesis, hemoglobin production)
+- Suggest coordinated regulatory programs
+
+**3. Expression waves:**
+- Transient expression: Genes that peak and decline
+- Sustained expression: Genes that stay on once activated
+- Repression: Genes turned off during differentiation
+
+**4. Fate probability correlation:**
+- Genes that track with fate probability are strong drivers
+- Sharp vs. gradual transitions reveal commitment dynamics
+
+**Biological interpretation:**
+- **Pioneer factors**: Genes expressed very early may initiate differentiation
+- **Effector genes**: Genes expressed late execute the differentiated phenotype
+- **Checkpoints**: Sharp transitions may indicate irreversible commitment points
+:::
 
 ```{python}
 #Plot expression cascades of several genes over pseudotime
@@ -614,17 +1069,51 @@ cr.pl.heatmap(
 ```
 
 Now that we have visualized expression trends for several genes
-associated with the our lineages, we could be interested in identifying
+associated with our lineages, we could be interested in identifying
 **other genes that follow a specific expression pattern** along the
 trajectory. Let's say we are interested in genes from the erythrocyte
 lineage that increase with pseudotime (like Car1) and genes whose
 expression peaks and then falls off again before the maximum pseudotime
 value is reached (like Vamp5).
 
-Cellrank provides a way for us to identify genes that have a similar
+CellRank provides a way for us to identify genes that have a similar
 expression along the trajectory, using the `cr.pl.cluster_trends`
 function. You can modify the number of clusters by modifying the
 resolution parameter until you find the clustering to be appropriate.
+
+::: {.callout-note}
+## Why run this code?
+
+**Clustering gene trends identifies shared expression patterns:**
+
+**The approach:**
+1. **Fit GAM for each gene** along the lineage
+2. **Extract expression curves** (not raw values, but fitted trends)
+3. **Cluster curves** using Leiden clustering
+4. **Group genes** by similar temporal dynamics
+
+**Why this is useful:**
+- **Discovery**: Find genes you didn't initially identify as drivers
+- **Functional modules**: Co-expressed genes often share functions
+- **Regulatory networks**: Similar patterns suggest common regulation
+- **Hypothesis generation**: Novel genes in interesting clusters → candidates for validation
+
+**Parameters:**
+- `resolution=0.4`: Controls number of gene clusters
+  - Higher → more clusters, finer patterns
+  - Lower → fewer clusters, broader patterns
+- `random_state=0`: Reproducibility
+
+**Output:**
+- Genes grouped by expression dynamics
+- Examples:
+  - **Early transient**: Peak early, then decline
+  - **Late activation**: Turn on only in mature cells
+  - **Sustained**: Gradual increase throughout differentiation
+  - **Biphasic**: Multiple peaks
+
+We can then extract genes from specific clusters that match interesting patterns.
+:::
 
 ```{python}
 #Then we cluster trends based on the erythrocyte driver genes
@@ -642,7 +1131,7 @@ cr.pl.cluster_trends(
 )
 ```
 
-The results of the clustering trend are saved as an anndata object in
+The results of the clustering trend are saved as an AnnData object in
 `adata.uns['lineage_12_eryth_trend']`. We will now use this to extract
 genes that follow a specific trend and plot them.
 
@@ -698,42 +1187,37 @@ cr.pl.gene_trends(
     )
 ```
 
-You can visaulize any number of genes in this manner in order to see
+You can visualize any number of genes in this manner in order to see
 which ones are interesting for your specific question.
 
-<div>
+::: {.callout-important}
+## Discuss
 
-> **Discuss**
->
-> As you can see, we can manipulate the trajectory quite a bit by
-> selecting different number of neighbors, components etc. to fit with
-> our assumptions on the development of these celltypes.
->
-> Please explore further how you can tweak the trajectory. For instance,
-> can you create a PAGA trajectory using the orignial UMAP from Seurat
-> instead? Hint, you first need to compute the neighbors on the UMAP.
+As you can see, we can manipulate the trajectory quite a bit by
+selecting different numbers of neighbors, components, etc., to fit with
+our assumptions on the development of these cell types.
 
-</div>
+Please explore further how you can tweak the trajectory. For instance,
+can you create a PAGA trajectory using the original UMAP from Seurat
+instead? **Hint**: You first need to compute the neighbors on the UMAP.
+
+**Questions to consider:**
+- How sensitive are results to parameter choices?
+- Do biological conclusions change with different settings?
+- What's the balance between data-driven discovery and biological assumptions?
+- How do you validate that a trajectory is "correct"?
+:::
 
 ## Session info
 
-```{=html}
+````{=html}
 <details>
-```
-```{=html}
-<summary>
-```
-Click here
-```{=html}
-</summary>
-```
+<summary>Click here</summary>
 
 ```{python}
 #| label: session
 sc.logging.print_versions()
 ```
 
-```{=html}
 </details>
-```
-
+````

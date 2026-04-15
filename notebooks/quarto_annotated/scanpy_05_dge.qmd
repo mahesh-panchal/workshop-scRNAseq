@@ -9,30 +9,55 @@ jupyter:
     name: scanpy
 ---
 
+::::callout-note
+## Note
 
-<div>
+Code chunks run Python commands unless it starts with `%%bash`, in
+which case, those chunks run shell commands.
 
-> **Note**
->
-> Code chunks run Python commands unless it starts with `%%bash`, in
-> which case, those chunks run shell commands.
-
-</div>
+::::
 
 In this tutorial we will cover differential gene expression, which
-comprises an extensive range of topics and methods. In single cell,
-differential expresison can have multiple functionalities such as
+comprises an extensive range of topics and methods. In single-cell,
+differential expression can have multiple functionalities such as
 identifying marker genes for cell populations, as well as identifying
-differentially regulated genes across conditions (healthy vs control).
+differentially regulated genes across conditions (healthy vs. control).
 We will also cover controlling batch effect in your test.
 
-Differential expression is performed with the function rank_genes_group.
-The default method to compute differential expression is the
-t-test_overestim_var. Other implemented methods are: logreg, t-test and
-wilcoxon.
+::: {.callout-tip}
+## Biological Relevance
 
-By default, the .raw attribute of AnnData is used in case it has been
-initialized, it can be changed by setting use_raw=False.
+**Differential gene expression (DGE) identifies which genes change their activity between different conditions or cell types.** It's like comparing shopping lists from different people—what items appear more frequently on one list versus another tells you about their preferences or needs.
+
+**Two main applications in single-cell:**
+
+**1. Finding marker genes (cluster biomarkers):**
+- **Question**: What genes define each cell type?
+- **Comparison**: Each cluster vs. all other cells
+- **Example**: CD3E is a marker for T cells because it's highly expressed in T cell clusters but not in B cells or monocytes
+- **Use**: Cell type annotation, validation, understanding cell identity
+
+**2. Finding condition-responsive genes:**
+- **Question**: How does disease (COVID-19) change gene expression within a specific cell type?
+- **Comparison**: Same cell type between conditions (COVID vs. control)
+- **Example**: Interferon-stimulated genes upregulated in COVID-19 monocytes
+- **Use**: Understanding disease mechanisms, identifying therapeutic targets
+
+**Why DGE matters:**
+- Reveals which genes drive cell identity
+- Identifies disease signatures
+- Discovers biomarkers for diagnosis
+- Uncovers therapeutic targets
+- Validates clustering results
+:::
+
+Differential expression is performed with the function `rank_genes_groups`.
+The default method to compute differential expression is the
+`t-test_overestim_var`. Other implemented methods are: `logreg`, `t-test` and
+`wilcoxon`.
+
+By default, the `.raw` attribute of AnnData is used in case it has been
+initialized; it can be changed by setting `use_raw=False`.
 
 The clustering with resolution 0.6 seems to give a reasonable number of
 clusters, so we will use that clustering for all DE tests.
@@ -94,17 +119,40 @@ print(adata.X[:10,:10])
 ```
 
 As you can see, the X matrix contains all genes and the data looks
-logtransformed.
+log-transformed.
+
+::: {.callout-note}
+## Why run this code?
+
+**DGE should be performed on normalized, log-transformed counts for ALL genes, not just highly variable genes.** Here's why:
+
+**Why all genes?**
+- HVG selection was optimized for clustering (identifying cell types)
+- Many important marker genes or disease-response genes may not be highly variable across all cell types
+- Example: A gene expressed only in cluster 5 might not be "variable" across the whole dataset, but it's a perfect marker for that cluster
+
+**Why normalized, log-transformed counts?**
+- **Normalization**: Accounts for differences in sequencing depth (total counts) between cells
+- **Log transformation**: 
+  - Stabilizes variance (highly expressed genes don't dominate)
+  - Makes the data more normally distributed (important for parametric tests like t-test)
+  - Converts multiplicative effects to additive (fold-changes become differences)
+
+**Using `adata.raw`:**
+- Contains all genes with normalized, log-transformed counts
+- Not affected by subsetting to HVGs or scaling/regression
+- Default for DGE functions in Scanpy
+:::
 
 For DGE analysis we would like to run with all genes, on normalized
 values, so if you did subset the `adata.X` for variable genes you would
 have to revert back to the raw matrix with
 `adata = adata.raw.to_adata()`. In case you have raw counts in the
-matrix you also have to renormalize and logtransform.
+matrix you also have to renormalize and log-transform.
 
-Now lets look at the clustering of the object we loaded in the umap. We
+Now let's look at the clustering of the object we loaded in the UMAP. We
 will use leiden_0.6 clustering in this exercise. If you recall from the
-previous exercise, we set the default umap to the umap created with
+previous exercise, we set the default UMAP to the UMAP created with
 Harmony.
 
 ```{python}
@@ -113,6 +161,35 @@ sc.pl.umap(adata, color='leiden_0.6')
 ```
 
 ## T-test
+
+::: {.callout-note}
+## Why run this code?
+
+**The t-test is a classical statistical test for comparing means between two groups.**
+
+**How it works:**
+- Calculates the mean expression of each gene in cluster A vs. all other cells
+- Computes a t-statistic: (difference in means) / (standard error of difference)
+- Assumes data are normally distributed (log-transformation helps with this)
+- Provides a p-value: probability of seeing this difference by chance
+
+**T-test formula:**
+$$t = \frac{\bar{X}_1 - \bar{X}_2}{SE}$$
+
+Where:
+- $\bar{X}_1, \bar{X}_2$ = mean expression in group 1 and group 2
+- $SE$ = standard error of the difference
+
+**Advantages:**
+- Fast computation
+- Well-understood statistical properties
+- Parametric (uses distributional assumptions)
+
+**Disadvantages:**
+- Assumes equal variance between groups (often violated in scRNA-seq)
+- Sensitive to outliers
+- May not handle zero-inflation well (many genes have zero counts in many cells)
+:::
 
 ```{python}
 #| label: ttest
@@ -125,6 +202,28 @@ adata.uns.keys()
 
 ## T-test overestimated_variance
 
+::: {.callout-note}
+## Why run this code?
+
+**The overestimated variance t-test is a modification that's more robust for single-cell data.**
+
+**The problem with standard t-test:**
+- In scRNA-seq, genes often have very low variance within a cluster (many cells have zero or similar low expression)
+- This leads to very small standard errors
+- Result: inflated t-statistics and overly optimistic p-values
+
+**The overestimated variance approach:**
+- Intentionally **inflates the variance estimate** to be more conservative
+- Uses a pooled variance across all groups rather than group-specific variance
+- Helps prevent false positives from genes with artificially low variance
+
+**Formula modification:**
+Instead of using within-group variance, uses:
+$$Var_{pooled} = \frac{1}{n}\sum_{i=1}^{n}(x_i - \bar{x}_{global})^2$$
+
+This is **more conservative** but **more reliable** for scRNA-seq where variance is heterogeneous.
+:::
+
 ```{python}
 #| label: ttest-o
 sc.tl.rank_genes_groups(adata, 'leiden_0.6', method='t-test_overestim_var', key_added = "t-test_ov")
@@ -134,10 +233,39 @@ sc.pl.rank_genes_groups(adata, n_genes=25, sharey=False, key = "t-test_ov")
 ## Wilcoxon rank-sum
 
 The result of a Wilcoxon rank-sum (Mann-Whitney-U) test is very similar.
-We recommend using the latter in publications, see e.g., Sonison &
+We recommend using the latter in publications, see e.g., Soneson &
 Robinson (2018). You might also consider much more powerful differential
-testing packages like MAST, limma, DESeq2 and, for python, the recent
+testing packages like MAST, limma, DESeq2 and, for Python, the recent
 diffxpy.
+
+::: {.callout-note}
+## Why run this code?
+
+**The Wilcoxon rank-sum test (Mann-Whitney U test) is a non-parametric alternative to the t-test.**
+
+**How it works:**
+1. **Rank** all cells by expression of a gene (regardless of group)
+2. **Sum ranks** for cells in cluster A vs. other cells
+3. **Test**: Are ranks higher/lower than expected by chance?
+
+**Key differences from t-test:**
+- **Non-parametric**: Makes no assumptions about data distribution
+- **Robust to outliers**: Uses ranks instead of actual values
+- **Handles zero-inflation better**: Many zeros don't skew results as much
+
+**Advantages for scRNA-seq:**
+- More robust to the heavy zero-inflation in scRNA-seq data
+- Doesn't assume normality
+- Less sensitive to extreme outliers
+- Generally recommended for single-cell studies
+
+**Disadvantages:**
+- Slightly less power than t-test when data are truly normal
+- Doesn't provide effect size directly (though can calculate log fold-change separately)
+- Computationally slower for very large datasets
+
+**Community recommendation**: Wilcoxon is currently the most commonly used and recommended test for scRNA-seq marker identification (Soneson & Robinson, 2018).
+:::
 
 ```{python}
 #| label: wilcoxon
@@ -148,10 +276,43 @@ sc.pl.rank_genes_groups(adata, n_genes=25, sharey=False, key="wilcoxon")
 ## Logistic regression test
 
 As an alternative, let us rank genes using logistic regression. For
-instance, this has been suggested by Natranos et al. (2018). The
-essential difference is that here, we use a multi-variate appraoch
-whereas conventional differential tests are uni-variate. Clark et
-al. (2014) has more details.
+instance, this has been suggested by Natranos et al. (2018). The
+essential difference is that here, we use a multivariate approach
+whereas conventional differential tests are univariate. Clark et
+al. (2014) has more details.
+
+::: {.callout-note}
+## Why run this code?
+
+**Logistic regression is a multivariate machine learning approach to finding marker genes.**
+
+**How it differs from t-test/Wilcoxon:**
+- **Univariate tests** (t-test, Wilcoxon): Evaluate each gene independently
+  - Question: "Is gene X differentially expressed in cluster A?"
+- **Multivariate approach** (logistic regression): Evaluates genes together
+  - Question: "Which combination of genes best predicts cluster membership?"
+
+**Logistic regression approach:**
+1. **Model**: Predicts cluster membership from gene expression: $P(cluster=A) = f(gene_1, gene_2, ..., gene_n)$
+2. **Feature importance**: Genes with high regression coefficients are strong predictors
+3. **Classification**: Identifies genes that are both specific and sensitive for a cluster
+
+**Advantages:**
+- Finds genes that are **jointly** predictive (not just individually)
+- Can account for correlations between genes
+- Provides classification-oriented markers (useful for cell type identification)
+
+**Disadvantages:**
+- More complex interpretation
+- Computationally more intensive
+- May be overfit-prone with many genes
+- Less commonly used in scRNA-seq literature
+
+**When to use:**
+- When you need markers for classification/prediction
+- When genes are correlated and you want to find unique combinations
+- For building cell type classifiers
+:::
 
 ```{python}
 #| label: logreg
@@ -161,12 +322,35 @@ sc.pl.rank_genes_groups(adata, n_genes=25, sharey=False, key = "logreg")
 
 ## Compare genes
 
-Take all significant DE genes for cluster0 with each test and compare
+Take all significant DE genes for cluster 0 with each test and compare
 the overlap.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Comparing results across methods reveals which marker genes are robust vs. method-specific.**
+
+**High overlap** (center of Venn diagram):
+- Genes found by all methods are **highly reliable markers**
+- These are strongly and consistently differentially expressed
+- Safest choices for cell type annotation or validation
+
+**Method-specific genes**:
+- Found by only one method
+- May represent:
+  - **True positives missed by other methods** (e.g., genes with non-normal distributions found by Wilcoxon but not t-test)
+  - **False positives specific to that method's assumptions**
+  - **Edge cases** near significance thresholds
+
+**Practical approach:**
+- Use the **intersection** for high-confidence markers
+- Investigate method-specific genes manually with visualization
+- Consider the **union** for exploratory analysis
+:::
 
 ```{python}
 #| label: compare
-#compare cluster1 genes, only stores top 100 by default
+#compare cluster 0 genes, only stores top 100 by default
 
 wc = sc.get.rank_genes_groups_df(adata, group='0', key='wilcoxon', pval_cutoff=0.01, log2fc_min=0)['names']
 tt = sc.get.rank_genes_groups_df(adata, group='0', key='t-test', pval_cutoff=0.01, log2fc_min=0)['names']
@@ -178,8 +362,8 @@ venn3([set(wc),set(tt),set(tt_ov)], ('Wilcox','T-test','T-test_ov') )
 plt.show()
 ```
 
-As you can see, the Wilcoxon test and the T-test with overestimated
-variance gives very similar result. Also the regular T-test has good
+As you can see, the Wilcoxon test and the t-test with overestimated
+variance give very similar results. Also the regular t-test has good
 overlap.
 
 ## Visualization
@@ -187,6 +371,39 @@ overlap.
 There are several ways to visualize the expression of top DE genes. Here
 we will plot top 5 genes per cluster from Wilcoxon test as heatmap,
 dotplot, violin plots or a matrix with average expression.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Different visualizations reveal different aspects of marker gene expression:**
+
+**Heatmap:**
+- Shows expression patterns across all cells
+- Reveals gradients and heterogeneity within clusters
+- Good for seeing overall patterns
+
+**Dot plot:**
+- **Dot size**: % of cells expressing the gene (detection rate)
+- **Dot color**: Mean expression level in expressing cells
+- Efficiently shows both prevalence and intensity
+- Best for comparing markers across many clusters
+
+**Violin plot:**
+- Shows the full distribution of expression
+- Reveals bimodality (some cells high, some low)
+- Shows outliers and expression variance
+- Good for understanding heterogeneity
+
+**Matrix plot:**
+- Mean expression as color intensity
+- Clean, simple summary
+- Good for publications
+
+**Which to use?**
+- **Quick overview**: Dot plot or matrix plot
+- **Detailed inspection**: Violin plot or heatmap
+- **Publication**: Depends on story (dot plots are very popular)
+:::
 
 ```{python}
 #| label: visualize
@@ -201,6 +418,27 @@ sc.pl.rank_genes_groups_matrixplot(adata, n_genes=5, key="wilcoxon", groupby="le
 We can also do pairwise comparisons of individual clusters on one vs
 many clusters. For instance, clusters 1 & 2 have very similar expression
 profiles.
+
+::: {.callout-note}
+## Why run this code?
+
+**Pairwise cluster comparisons identify subtle differences between similar cell populations.**
+
+**Use cases:**
+- **Closely related cell types**: CD4+ helper T cells vs. regulatory T cells
+- **Cell states**: Resting vs. activated monocytes
+- **Validation**: Are two clusters truly distinct or should they be merged?
+
+**Setting `reference='2'`:**
+- Instead of comparing cluster 1 to **all other cells**, compare cluster 1 to **cluster 2 only**
+- More sensitive for detecting small differences
+- Removes noise from unrelated cell types
+
+**Interpretation:**
+- **Many DEGs**: Clusters are distinct cell types/states
+- **Few DEGs**: Clusters might represent over-clustering; consider merging
+- **Expected differences**: Validates biological hypothesis (e.g., marker genes you expect between these subtypes)
+:::
 
 ```{python}
 #| label: subset
@@ -225,11 +463,32 @@ sc.pl.stacked_violin(adata, mynames, groupby = 'leiden_0.6')
 
 The second way of computing differential expression is to answer which
 genes are differentially expressed within a cluster. For example, in our
-case we have libraries comming from patients and controls and we would
+case we have libraries coming from patients and controls and we would
 like to know which genes are influenced the most in a particular cell
 type. For this end, we will first subset our data for the desired cell
 cluster, then change the cell identities to the variable of comparison
-(which now in our case is the **type**, e.g. Covid/Ctrl).
+(which now in our case is the **type**, e.g. COVID/Ctrl).
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Within-cluster DGE reveals how disease affects specific cell types.** This is often the most biologically interesting analysis in disease studies.
+
+**Example questions:**
+- How do **monocytes** change in COVID-19 patients vs. healthy controls?
+- Which genes are upregulated in **COVID-19 T cells** specifically?
+- Do different cell types respond differently to the same disease?
+
+**Why subset to one cluster first?**
+- **Cell type specificity**: The response to COVID-19 in monocytes is completely different from the response in T cells
+- **Biological relevance**: Averaging across all cell types would mask cell-type-specific effects
+- **Statistical power**: Comparing apples-to-apples (same cell type, different conditions)
+
+**Interpretation:**
+- **Upregulated in COVID**: Genes involved in disease response, inflammation, stress
+- **Downregulated in COVID**: Genes involved in normal homeostatic functions
+- **Cell-type-specific responses**: Some genes may be COVID-responsive only in certain cell types
+:::
 
 ```{python}
 #| label: condition
@@ -246,7 +505,7 @@ sc.pl.rank_genes_groups_violin(cl1, n_genes=10, key="wilcoxon")
 ```
 
 We can also plot these genes across all clusters, but split by "type",
-to check if the genes are also up/downregulated in other celltypes.
+to check if the genes are also up/downregulated in other cell types.
 
 ```{python}
 #| label: condition-vln-all
@@ -262,13 +521,34 @@ sns.catplot(x = "leiden_0.6", y = "value", hue = "type", kind = 'violin', col = 
 ```
 
 As you can see, we have many sex chromosome related genes among the top
-DE genes. And if you remember from the QC lab, we have inbalanced sex
+DE genes. And if you remember from the QC lab, we have imbalanced sex
 distribution among our subjects, so this is probably not related to
-covid at all.
+COVID at all.
+
+::: {.callout-warning}
+## Important: Confounding variables
+
+**Sex is a confounding variable** in this comparison. If COVID and control groups have different sex distributions:
+- Sex-linked genes will appear as "COVID-responsive"
+- This is a **false positive**—the genes change because of sex, not disease
+
+**Other common confounders in scRNA-seq:**
+- **Age**: Aging affects immune cell composition and function
+- **Batch**: Samples processed on different days
+- **Ethnicity**: Genetic background affects gene expression
+- **Medication**: Treatments alter gene expression
+- **Sample quality**: RNA degradation, cell viability
+
+**Solutions:**
+1. **Balanced experimental design**: Match groups for potential confounders
+2. **Filter confounded genes**: Remove sex chromosome genes (as done below)
+3. **Statistical models**: Include confounders as covariates (requires specialized tools like MAST, EdgeR)
+4. **Stratified analysis**: Analyze males and females separately
+:::
 
 ### Remove sex chromosome genes
 
-To remove some of the bias due to inbalanced sex in the subjects we can
+To remove some of the bias due to imbalanced sex in the subjects we can
 remove the sex chromosome related genes.
 
 ```{python}
@@ -310,10 +590,31 @@ related to sex.
 
 ### Patient batch effects
 
-When we are testing for Covid vs Control we are running a DGE test for 4
-vs 4 individuals. That will be very sensitive to sample differences
-unless we find a way to control for it. So first, lets check how the top
+When we are testing for COVID vs. Control we are running a DGE test for 4
+vs. 4 individuals. That will be very sensitive to sample differences
+unless we find a way to control for it. So first, let's check how the top
 DGEs are expressed in that cluster, across the individuals:
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Individual variability is a major challenge in human studies.** Unlike inbred mouse strains, humans are genetically diverse, have different environmental exposures, ages, medications, and disease severity.
+
+**The problem:**
+- You have 4 COVID patients and 4 controls
+- Each patient is unique
+- Some COVID patients might have severe disease, others mild
+- Controls might vary in age, genetics, lifestyle
+- **Risk**: A gene that's high in just one COVID patient might be detected as "significantly upregulated in COVID"
+
+**What to look for:**
+- **Consistent patterns**: Gene high in all/most COVID patients → likely COVID-related
+- **Patient-specific patterns**: Gene high in only one patient → could be that individual's biology, not COVID
+- **Batch effects**: Gene high in samples processed together → technical artifact
+
+**Ideal scenario**: Consistent up/downregulation across all replicates
+**Reality**: Often see patient-specific effects mixed with true biological signals
+:::
 
 ```{python}
 #| label: vln-batch
@@ -325,10 +626,10 @@ sc.pl.violin(cl1, genes1, groupby='sample', rotation=45)
 sc.pl.violin(cl1, genes2, groupby='sample', rotation=45)
 ```
 
-As you can see, many of the genes detected as DGE in Covid are unique to
+As you can see, many of the genes detected as DGE in COVID are unique to
 one or 2 patients.
 
-We can also plot the top Covid and top Ctrl genes as a dotplot:
+We can also plot the top COVID and top Ctrl genes as a dotplot:
 
 ```{python}
 #| label: dotplot-batch
@@ -339,8 +640,8 @@ genes = genes1.tolist() +  genes2.tolist()
 sc.pl.dotplot(cl1,genes, groupby='sample')
 ```
 
-Clearly many of the top Covid genes are only high in the covid_17
-sample, and not a general feature of covid patients.
+Clearly many of the top COVID genes are only high in the covid_17
+sample, and not a general feature of COVID patients.
 
 This is also the patient with the highest number of cells in this
 cluster:
@@ -350,13 +651,65 @@ cluster:
 cl1.obs['sample'].value_counts()
 ```
 
+::: {.callout-note}
+## Why run this code?
+
+**Unbalanced cell numbers per sample creates a statistical bias:**
+
+**The problem:**
+- covid_17 has more cells than other samples in this cluster
+- Statistical tests give more weight to samples with more cells
+- DGE results become dominated by covid_17's gene expression
+- Result: You're finding covid_17-specific genes, not COVID-specific genes
+
+**Why this happens:**
+- Some samples may have higher cell viability
+- Different sampling efficiency
+- Biological variation (some patients have more of this cell type)
+- Quality filtering may have been harsher on some samples
+
+**Solutions:**
+1. **Downsample**: Equalize cell numbers per sample (done below)
+2. **Pseudobulk**: Aggregate cells per sample, then compare samples (requires R packages)
+3. **Mixed models**: Include patient as random effect (MAST, limma)
+4. **Filter samples**: Remove outlier samples (lose data, not ideal)
+:::
+
 ### Subsample
 
 So one obvious thing to consider is an equal amount of cells per
 individual so that the DGE results are not dominated by a single sample.
 
 So we will downsample to an equal number of cells per sample, in this
-case 34 cells per sample as it is the lowest number among all samples
+case 37 cells per sample as it is the lowest number among all samples.
+
+::: {.callout-note}
+## Why run this code?
+
+**Subsampling (downsampling) equalizes the contribution of each sample to the statistical test.**
+
+**How it works:**
+1. Identify the sample with the **fewest cells** (37 in this case)
+2. Randomly sample exactly 37 cells from **each sample**
+3. Now each sample contributes equally to the comparison
+
+**Advantages:**
+- Simple and effective
+- Prevents single-sample dominance
+- Fair comparison across individuals
+
+**Disadvantages:**
+- **Loss of power**: Discarding cells means less statistical power
+- **Random sampling**: Different random selections could give slightly different results (use `random_state` for reproducibility)
+- **Information loss**: Throwing away data is not ideal
+
+**Alternative approaches:**
+- **Pseudobulk**: Sum counts per sample, then use bulk RNA-seq methods (EdgeR, DESeq2)
+- **Mixed models**: Model patient as a random effect (MAST with patient ID)
+- **Meta-analysis**: Test per patient, then combine p-values
+
+For small numbers of samples (4 vs. 4), all methods have limitations. Ideally, design experiments with more biological replicates.
+:::
 
 ```{python}
 #| label: subsample-clusters
@@ -395,11 +748,11 @@ when doing differential expression.
 
 There are many different ways to try and resolve the issue of patient
 batch effects, however most of them require R packages. These can be run
-via rpy2 as is demonstraded in this compendium:
+via rpy2 as is demonstrated in this compendium:
 https://www.sc-best-practices.org/conditions/differential_gene_expression.html
 
 However, we have not included it here as of now. So please have a look
-at the patient batch effect section in the seurat DGE tutorial where we
+at the patient batch effect section in the Seurat DGE tutorial where we
 run EdgeR on pseudobulk and MAST with random effect:
 https://nbisweden.github.io/workshop-scRNAseq/labs/seurat/seurat_05_dge.html
 
@@ -410,14 +763,45 @@ https://nbisweden.github.io/workshop-scRNAseq/labs/seurat/seurat_05_dge.html
 Having a defined list of differentially expressed genes, you can now
 look for their combined function using hypergeometric test.
 
+::: {.callout-tip}
+## Biological Relevance
+
+**Gene set analysis asks: "What biological processes or pathways are enriched in my DE genes?"** Individual genes are hard to interpret, but sets of genes working together reveal biological meaning.
+
+**Example:**
+- **DE genes**: IFNG, STAT1, IRF1, MX1, OAS1, ISG15
+- **Individual interpretation**: "These genes are upregulated in COVID" (not very informative)
+- **Gene set interpretation**: "Interferon signaling pathway is activated in COVID" (biologically meaningful!)
+
+**Hypergeometric test logic:**
+Think of it like drawing marbles from a bag:
+- **Bag**: All genes in the genome (~20,000 genes)
+- **Red marbles**: Genes in a pathway (e.g., 100 interferon pathway genes)
+- **Draw**: Your DE genes (e.g., 500 genes)
+- **Question**: Did you draw more red marbles than expected by chance?
+
+**Formula:**
+$$P = \frac{\binom{K}{k} \binom{N-K}{n-k}}{\binom{N}{n}}$$
+
+Where:
+- N = total genes
+- K = genes in pathway
+- n = DE genes
+- k = DE genes also in pathway
+
+**Interpretation:**
+- **Significant enrichment** (low p-value): This pathway/process is likely involved in your biological condition
+- **Multiple pathways enriched**: Reveals the biological program activated (e.g., inflammation, cell cycle, metabolism)
+:::
+
 ```{python}
 #| label: gsea-genesets
-#Available databases : ‘Human’, ‘Mouse’, ‘Yeast’, ‘Fly’, ‘Fish’, ‘Worm’ 
+#Available databases : 'Human', 'Mouse', 'Yeast', 'Fly', 'Fish', 'Worm' 
 gene_set_names = gseapy.get_library_name(organism='Human')
 print(gene_set_names)
 ```
 
-Get the significant DEGs for the Covid patients.
+Get the significant DEGs for the COVID patients.
 
 ```{python}
 #| label: get-dges
@@ -426,15 +810,70 @@ glist = sc.get.rank_genes_groups_df(cl1_sub, group='Covid', key='wilcoxon', log2
 print(len(glist))
 ```
 
+::: {.callout-note}
+## Why run this code?
+
+**Gene list filtering for enrichment analysis:**
+
+**`log2fc_min=0.25`**: Minimum log2 fold-change
+- Filters for genes with at least 1.19-fold change (2^0.25 = 1.19)
+- Removes genes that are statistically significant but biologically trivial
+- Focuses on genes with meaningful expression changes
+
+**`pval_cutoff=0.05`**: Maximum p-value
+- Standard significance threshold
+- Controls false positive rate
+
+**Why both filters?**
+- **Statistical significance (p-value)**: Is the difference real or random noise?
+- **Biological significance (fold-change)**: Is the difference large enough to matter?
+- Need both: A gene with 1.01-fold change might be statistically significant with enough cells, but biologically meaningless
+
+**List length matters:**
+- Too few genes (<50): Low power, miss pathways
+- Too many genes (>1000): High noise, everything is "significant"
+- Sweet spot: 100-500 genes captures major biology without noise
+:::
+
 ```{python}
 #| label: gsea
 enr_res = gseapy.enrichr(gene_list=glist, organism='Human', gene_sets='GO_Biological_Process_2025', cutoff = 0.5)
 enr_res.results.head()
 ```
 
-Some databases of interest:\
-`GO_Biological_Process_2017b``KEGG_2019_Human``KEGG_2019_Mouse``WikiPathways_2019_Human``WikiPathways_2019_Mouse`\
-You visualize your results using a simple barplot, for example:
+::: {.callout-tip}
+## Biological Relevance
+
+**Common gene set databases:**
+
+**Gene Ontology (GO):**
+- **Biological Process**: What the genes do (e.g., "immune response", "cell division")
+- **Cellular Component**: Where they act (e.g., "mitochondrion", "nucleus")
+- **Molecular Function**: Their biochemical activity (e.g., "kinase activity", "DNA binding")
+
+**KEGG**: Metabolic and signaling pathways (e.g., "glycolysis", "MAPK signaling")
+
+**WikiPathways**: Community-curated pathways
+
+**Reactome**: Detailed pathway diagrams
+
+**MSigDB Hallmarks**: 50 well-defined biological states (e.g., "Inflammatory response", "Hypoxia")
+
+**Which to use?**
+- **Broad overview**: GO Biological Process, MSigDB Hallmarks
+- **Specific pathways**: KEGG, Reactome, WikiPathways
+- **Best practice**: Try multiple databases, look for consistent themes
+:::
+
+Some databases of interest:
+
+- `GO_Biological_Process_2025`
+- `KEGG_2019_Human`
+- `KEGG_2019_Mouse`
+- `WikiPathways_2019_Human`
+- `WikiPathways_2019_Mouse`
+
+You can visualize your results using a simple barplot, for example:
 
 ```{python}
 #| label: plot-gsea
@@ -444,14 +883,72 @@ gseapy.barplot(enr_res.res2d,title='GO_Biological_Process_2025')
 ## Gene Set Enrichment Analysis (GSEA)
 
 Besides the enrichment using hypergeometric test, we can also perform
-gene set enrichment analysis (GSEA), which scores ranked genes list
+gene set enrichment analysis (GSEA), which scores ranked gene lists
 (usually based on fold changes) and computes permutation test to check
-if a particular gene set is more present in the Up-regulated genes,
-among the DOWN_regulated genes or not differentially regulated.
+if a particular gene set is more present in the upregulated genes,
+among the downregulated genes or not differentially regulated.
 
-We need a table with all DEGs and their log foldchanges. However, many
-lowly expressed genes will have high foldchanges and just contribue
+::: {.callout-tip}
+## Biological Relevance
+
+**GSEA differs from hypergeometric enrichment in a fundamental way:**
+
+**Hypergeometric (over-representation) analysis:**
+- Uses a **binary gene list**: significant vs. non-significant (cutoff-based)
+- Question: "Are pathway genes over-represented in my significant genes?"
+- Problem: Arbitrary cutoff (why p<0.05 and not p<0.1?)—genes just below cutoff are ignored
+
+**GSEA (gene set enrichment analysis):**
+- Uses a **ranked gene list**: all genes ordered by fold-change (no cutoff)
+- Question: "Are pathway genes clustered at the top or bottom of my ranked list?"
+- Advantage: Uses information from ALL genes, not just those passing a threshold
+
+**Visual analogy:**
+Imagine students ranked by test scores:
+- **Hypergeometric**: Are honor students (>90%) over-represented in the chess club?
+- **GSEA**: Are chess club members clustered toward the top of the ranked list?
+
+**GSEA enrichment score:**
+- Walk down the ranked gene list
+- Increase score when you hit a pathway gene
+- Decrease score when you miss
+- **Peak score** = enrichment score
+- **Permutation test** determines if this peak is significant
+
+**When to use which?**
+- **Hypergeometric**: Clear cutoff, well-defined gene set
+- **GSEA**: Want to use all expression data, avoid arbitrary cutoffs, detect subtle coordinated changes
+:::
+
+We need a table with all DEGs and their log fold-changes. However, many
+lowly expressed genes will have high fold-changes and just contribute
 noise, so also filter for expression in enough cells.
+
+::: {.callout-note}
+## Why run this code?
+
+**Why filter for expression in enough cells?**
+
+**The problem:**
+- A gene expressed in 2 cells in COVID and 0 cells in control has **infinite fold-change**
+- But this is **biologically meaningless** and **statistically unreliable**
+- Lowly expressed genes have high variance and contribute noise
+
+**The filter (`n_cells_by_counts > 30`):**
+- Only include genes expressed in at least 30 cells
+- Ensures robust estimates of expression
+- Reduces noise from dropout effects (technical zeros)
+
+**Effect on ranking:**
+- Removes unstable genes with extreme fold-changes based on few cells
+- Focuses on genes with reliable expression estimates
+- Improves GSEA signal-to-noise ratio
+
+**The 30-cell threshold:**
+- Arbitrary but reasonable for a ~300-cell dataset
+- Could adjust based on dataset size and clustering resolution
+- Balance: Too strict loses rare cell type markers; too loose includes noise
+:::
 
 ```{python}
 #| label: gene-rank
@@ -467,13 +964,13 @@ gene_rank = gene_rank[gene_rank['names'].isin(cl1.var_names[cl1.var.n_cells_by_c
 gene_rank
 ```
 
-Once our list of genes are sorted, we can proceed with the enrichment
-itself. We can use the package to get gene set from the Molecular
+Once our list of genes is sorted, we can proceed with the enrichment
+itself. We can use the package to get gene sets from the Molecular
 Signature Database (MSigDB) and select KEGG pathways as an example.
 
 ```{python}
 #| label: gsea-genesets2
-#Available databases : ‘Human’, ‘Mouse’, ‘Yeast’, ‘Fly’, ‘Fish’, ‘Worm’ 
+#Available databases : 'Human', 'Mouse', 'Yeast', 'Fly', 'Fish', 'Worm' 
 gene_set_names = gseapy.get_library_name(organism='Human')
 print(gene_set_names)
 ```
@@ -482,6 +979,33 @@ Next, we will run GSEA. This will result in a table containing
 information for several pathways. We can then sort and filter those
 pathways to visualize only the top ones. You can select/filter them by
 either `p-value` or normalized enrichment score (`NES`).
+
+::: {.callout-note}
+## Why run this code?
+
+**GSEA key outputs:**
+
+**Normalized Enrichment Score (NES):**
+- **Positive NES**: Pathway is enriched in **upregulated genes** (top of ranked list)
+- **Negative NES**: Pathway is enriched in **downregulated genes** (bottom of ranked list)
+- **Magnitude**: Strength of enrichment (|NES| > 1.5 is typically considered meaningful)
+
+**P-value and FDR:**
+- Calculated by permutation test (randomly shuffle gene labels, recalculate enrichment)
+- FDR (False Discovery Rate): Corrects for multiple testing
+- FDR < 0.25 is often considered significant (more lenient than typical 0.05 for exploratory GSEA)
+
+**Leading edge genes:**
+- Core genes driving the enrichment signal
+- Genes appearing before the peak enrichment score
+- These are the key genes in the pathway responding to your condition
+
+**Example interpretation:**
+- "Interferon signaling" with NES = +2.5, FDR = 0.001
+  - Interferon pathway genes are strongly enriched among COVID-upregulated genes
+  - This is highly significant
+  - Suggests interferon response is activated in COVID patients
+:::
 
 ```{python}
 #| label: gsea-rank
@@ -496,16 +1020,50 @@ terms[:10]
 gseapy.gseaplot(rank_metric=res.ranking, term=terms[0], **res.results[terms[0]])
 ```
 
-<div>
+::: {.callout-tip}
+## Biological Relevance
 
-> **Discuss**
->
-> Which KEGG pathways are upregulated in this cluster? Which KEGG
-> pathways are dowregulated in this cluster? Change the pathway source
-> to another gene set (e.g. CP:WIKIPATHWAYS or CP:REACTOME or
-> CP:BIOCARTA or GO:BP) and check the if you get similar results?
+**How to read a GSEA enrichment plot:**
 
-</div>
+**Top panel (Enrichment Score):**
+- **X-axis**: Genes ranked by fold-change (left = upregulated, right = downregulated)
+- **Y-axis**: Running enrichment score
+- **Peak**: Maximum enrichment (positive = enriched in upregulated genes, negative = enriched in downregulated genes)
+- **Green curve**: How the enrichment score changes as you walk through the ranked gene list
+
+**Middle panel (Gene hits):**
+- **Black bars**: Where pathway genes appear in the ranked list
+- **Clustering at left**: Pathway enriched in upregulated genes
+- **Clustering at right**: Pathway enriched in downregulated genes
+- **Spread throughout**: No enrichment
+
+**Bottom panel (Ranked list metric):**
+- **X-axis**: Gene rank position
+- **Y-axis**: Ranking metric (log fold-change)
+- **Red**: Upregulated in COVID
+- **Blue**: Downregulated in COVID
+- Shows how expression changes across the full gene list
+
+**Example interpretation:**
+If you see black bars clustered on the left with a positive peak:
+- This pathway's genes are predominantly upregulated in COVID
+- The pathway is activated in the disease state
+- Leading edge genes (those before the peak) are the core drivers
+:::
+
+::: {.callout-important}
+## Discuss
+
+- Which KEGG pathways are upregulated in this cluster? 
+- Which KEGG pathways are downregulated in this cluster? 
+- Change the pathway source to another gene set (e.g., `CP:WIKIPATHWAYS` or `CP:REACTOME` or `CP:BIOCARTA` or `GO:BP`) and check if you get similar results?
+
+**Questions to consider:**
+- Do the enriched pathways make biological sense for COVID-19?
+- Are interferon/immune pathways enriched?
+- Do results differ between GO and KEGG?
+- Are there unexpected pathways that might reveal novel biology?
+:::
 
 Finally, let's save the integrated data for further analysis.
 
@@ -516,23 +1074,14 @@ adata.write_h5ad('./data/covid/results/scanpy_covid_qc_dr_scanorama_cl_dge.h5ad'
 
 ## Session info
 
-```{=html}
+````{=html}
 <details>
-```
-```{=html}
-<summary>
-```
-Click here
-```{=html}
-</summary>
-```
+<summary>Click here</summary>
 
 ```{python}
 #| label: session
 sc.logging.print_versions()
 ```
 
-```{=html}
 </details>
-```
-
+````

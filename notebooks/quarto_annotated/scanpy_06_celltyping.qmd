@@ -9,42 +9,77 @@ jupyter:
     name: scanpy
 ---
 
+::::callout-note
+## Note
 
-<div>
+Code chunks run Python commands unless it starts with `%%bash`, in
+which case, those chunks run shell commands.
 
-> **Note**
->
-> Code chunks run Python commands unless it starts with `%%bash`, in
-> which case, those chunks run shell commands.
+::::
 
-</div>
-
-Celltype prediction can either be performed on indiviudal cells where
+Celltype prediction can either be performed on individual cells where
 each cell gets a predicted celltype label, or on the level of clusters.
-All methods are based on similarity to other datasets, single cell or
-sorted bulk RNAseq, or uses known marker genes for each cell type.\
+All methods are based on similarity to other datasets, single-cell or
+sorted bulk RNA-seq, or use known marker genes for each cell type.
+
 Ideally celltype predictions should be run on each sample separately and
 not using the integrated data. In this case we will select one sample
-from the Covid data, `ctrl_13` and predict celltype by cell on that
-sample.\
+from the COVID data, `ctrl_13` and predict celltype by cell on that
+sample.
+
 Some methods will predict a celltype to each cell based on what it is
 most similar to, even if that celltype is not included in the reference.
 Other methods include an uncertainty so that cells with low similarity
-scores will be unclassified.\
-There are multiple different methods to predict celltypes, here we will
+scores will be unclassified.
+
+There are multiple different methods to predict celltypes; here we will
 just cover a few of those.
 
-Here we will use a reference PBMC dataset that we get from scanpy
-datasets and classify celltypes based on two methods:
+::: {.callout-tip}
+## Biological Relevance
 
--   Using scanorama for integration just as in the integration lab, and
-    then do label transfer based on closest neighbors.
--   Using ingest to project the data onto the reference data and
-    transfer labels.
--   Using Celltypist to predicted with a pretrained pbmc model or with
-    an own model based on the same reference data as the other methods.
+**Cell type annotation is one of the most critical—and challenging—steps in single-cell analysis.** After clustering cells based on gene expression similarity, we need to assign biological identities to those clusters. But how do we know if cluster 3 represents monocytes, dendritic cells, or activated T cells?
 
-First, lets load required libraries
+**Manual annotation challenges:**
+- Requires extensive biological expertise
+- Time-consuming and subjective
+- Difficult to standardize across studies
+- Prone to inconsistencies between researchers
+
+**Automated celltype prediction addresses these issues by:**
+
+**Reference-based approaches:**
+- Compare your cells to **annotated reference datasets** (e.g., published PBMC atlases)
+- Transfer labels from similar cells in the reference
+- Like using a field guide to identify a bird—compare features to known examples
+
+**Marker gene approaches:**
+- Check if cells express known marker genes for each cell type
+- Example: CD3E+ → T cells; CD14+ → monocytes; MS4A1+ → B cells
+- Like identifying a species by its characteristic features
+
+**Why multiple methods?**
+- **Different algorithms make different assumptions** (similarity metrics, confidence thresholds)
+- **No single "correct" annotation**—biology is complex
+- **Consensus across methods** increases confidence
+- Some cell types may be better captured by different approaches
+
+**Practical workflow:**
+1. Try multiple prediction methods
+2. Compare results and identify consensus
+3. Validate with marker gene expression
+4. Use biological knowledge to resolve ambiguities
+5. Check for unexpected/novel cell types
+:::
+
+Here we will use a reference PBMC dataset that we get from Scanpy
+datasets and classify celltypes based on multiple methods:
+
+- Using **Scanorama** for integration just as in the integration lab, and then do label transfer based on closest neighbors.
+- Using **ingest** to project the data onto the reference data and transfer labels.
+- Using **Celltypist** to predict with a pretrained PBMC model or with an own model based on the same reference data as the other methods.
+
+First, let's load required libraries.
 
 ```{python}
 #| label: libraries
@@ -63,7 +98,7 @@ sc.settings.verbosity = 2
 sc.settings.set_figure_params(dpi=80)
 ```
 
-Let's read in the saved Covid-19 data object from the clustering step.
+Let's read in the saved COVID-19 data object from the clustering step.
 
 ```{python}
 #| label: data-download-func
@@ -136,6 +171,35 @@ print(adata.shape)
 
 Subset one patient.
 
+::: {.callout-note}
+## Why run this code?
+
+**Analyzing one sample at a time is best practice for celltype prediction** for several reasons:
+
+**Avoids integration artifacts:**
+- Batch correction algorithms can blur biological differences
+- A cell type might be merged with another during integration
+- Integration works best when you already know cell types match across batches
+
+**Preserves sample-specific biology:**
+- Some cell types may be present in only some samples
+- Disease states may create unique cell populations
+- Integration assumes all samples have the same cell types (often false)
+
+**Better alignment with reference:**
+- Reference datasets are typically from single experiments
+- Sample-by-sample prediction avoids confounding batch effects
+- More accurate similarity calculations
+
+**Workflow:**
+1. Predict cell types **per sample** (current approach)
+2. Verify consistency across samples
+3. **Then** integrate with cell type labels already assigned
+4. Compare cell type proportions and states across conditions
+
+This approach treats integration as a tool for cross-sample comparison, not for initial cell type identification.
+:::
+
 ```{python}
 #| label: subset
 adata = adata[adata.obs["sample"] == "ctrl_13",:]
@@ -162,6 +226,29 @@ sc.pl.umap(
 Load the reference data from `scanpy.datasets`. It is the annotated and
 processed pbmc3k dataset from 10x.
 
+::: {.callout-tip}
+## Biological Relevance
+
+**Reference datasets are expertly annotated single-cell datasets used as "ground truth" for cell type prediction.** Think of them as textbooks or field guides—curated collections where cell identities are known with high confidence.
+
+**The PBMC3k dataset:**
+- **Source**: 10x Genomics public dataset
+- **Cells**: ~3,000 peripheral blood mononuclear cells from a healthy donor
+- **Annotation**: Manually curated cell types based on canonical markers
+- **Cell types included**: T cells (CD4+, CD8+), B cells, NK cells, monocytes (CD14+, FCGR3A+), dendritic cells
+
+**Why this reference works for our COVID data:**
+- **Same tissue**: Both are PBMCs (immune cells from blood)
+- **Same technology**: Both are 10x Genomics droplet-based scRNA-seq
+- **Well-characterized**: Extensively validated, widely used benchmark
+- **Healthy baseline**: Good reference for identifying altered states in disease
+
+**Reference quality matters:**
+- **Good reference**: Same tissue, similar technology, high-quality annotations
+- **Poor reference**: Different tissue, low quality, uncertain annotations → poor predictions
+- **Missing cell types**: If your data contains cell types not in the reference, they'll be misclassified
+:::
+
 ```{python}
 #| label: fetch-ref
 adata_ref = sc.datasets.pbmc3k_processed() 
@@ -180,8 +267,36 @@ As you can see, the celltype annotation is in the metadata column
 sc.pl.umap(adata_ref, color='louvain')
 ```
 
-Make sure we have the same genes in both datset by taking the
-intersection
+Make sure we have the same genes in both datasets by taking the
+intersection.
+
+::: {.callout-note}
+## Why run this code?
+
+**Celltype prediction requires that query and reference datasets share the same genes.**
+
+**The problem:**
+- Different experiments may quantify different gene sets
+- Some genes may be filtered out during QC
+- Reference might include genes not in your data (or vice versa)
+
+**Taking the intersection:**
+- Keeps only genes present in **both** datasets
+- Ensures fair similarity calculations (comparing same features)
+- Prevents errors from missing genes
+
+**What gets removed:**
+- Genes unique to one dataset
+- Genes filtered during QC in one but not the other
+- Usually removes 1,000-3,000 genes, retaining ~15,000-18,000
+
+**Impact:**
+- Minimal: Most informative genes are detected in both datasets
+- Marker genes are typically highly expressed and reliably detected
+- Rare or lowly expressed genes (which are noisy anyway) are often the ones filtered
+
+**We also preserve the original UMAP** (`X_umap_uncorr`) because computing neighbors on the restricted gene set will create a new UMAP, but we want to plot on the original embedding.
+:::
 
 ```{python}
 #| label: intersect-genes
@@ -199,7 +314,7 @@ adata_ref = adata_ref[:, var_names]
 adata = adata[:, var_names]
 ```
 
-First we need to rerun pca and umap with the same gene set for both
+First we need to rerun PCA and UMAP with the same gene set for both
 datasets.
 
 ```{python}
@@ -218,7 +333,28 @@ sc.tl.umap(adata, random_state=331)
 sc.pl.umap(adata, color='leiden_0.6')
 ```
 
-## Integrate with scanorama
+## Integrate with Scanorama
+
+::: {.callout-note}
+## Why run this code?
+
+**Integration aligns the reference and query datasets in a shared embedding space.** This enables direct comparison of cells across datasets.
+
+**Why integrate for celltype prediction?**
+- **Different batches**: Even PBMCs from different donors have batch effects
+- **Technical variation**: Sequencing runs, library prep, etc., create systematic differences
+- **Comparable space**: After integration, a T cell in your data should be near T cells in the reference
+
+**Scanorama approach:**
+1. Finds mutual nearest neighbors (cells that look similar in both datasets)
+2. Uses these "anchors" to align the datasets
+3. Creates a batch-corrected embedding where similar cell types cluster together regardless of origin
+
+**After integration:**
+- Cells of the same type from query and reference should overlap
+- Cell-to-cell distances become meaningful for label transfer
+- Can identify which reference cells are most similar to each query cell
+:::
 
 ```{python}
 #| label: integrate
@@ -250,7 +386,7 @@ adata_merged.obsm['Scanorama'] = embedding
 
 ```{python}
 #| label: process-scanorama
-#run  umap.
+#run umap.
 sc.pp.neighbors(adata_merged, n_pcs =50, use_rep = "Scanorama", random_state=159)
 sc.tl.umap(adata_merged, random_state=331)
 ```
@@ -265,7 +401,39 @@ sc.pl.umap(adata_merged, color=["sample","louvain"])
 Using the functions from the [Spatial
 tutorial](https://scanpy.readthedocs.io/en/stable/tutorials/spatial/integration-scanorama.html)
 from Scanpy we will calculate normalized cosine distances between the
-two datasets and tranfer labels to the celltype with the highest scores.
+two datasets and transfer labels to the celltype with the highest scores.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Label transfer assigns cell types based on similarity to reference cells.** It's like identifying an unknown plant by finding the most similar plant in a botanical reference and transferring its label.
+
+**How it works:**
+
+**1. Calculate similarity:**
+- For each query cell, compute similarity to all reference cells
+- Use **cosine similarity** (angle-based, good for high-dimensional data)
+- Result: Similarity matrix (query cells × reference cells)
+
+**2. Aggregate by cell type:**
+- For each query cell and each reference cell type, sum similarities to cells of that type
+- Normalize by the number of reference cells per type
+- Result: Probability scores for each cell type
+
+**3. Assign label:**
+- Each query cell gets the label of the cell type with highest similarity score
+- Confidence = strength of the top score vs. second-best
+
+**Advantages:**
+- Simple and intuitive
+- Works well when query and reference are well-aligned
+- Provides "soft" predictions (probability scores)
+
+**Limitations:**
+- No "unknown" category—will assign a label even if similarity is poor
+- Sensitive to integration quality
+- Assumes all cell types in query are in reference
+:::
 
 ```{python}
 #| label: transfer
@@ -312,7 +480,30 @@ sc.pl.umap(adata_merged, color=["sample","louvain",'label_trans'])
 sc.pl.umap(adata_merged[adata_merged.obs['sample']=='ctrl'], color='label_trans')
 ```
 
-Now plot how many cells of each celltypes can be found in each cluster.
+Now plot how many cells of each cell type can be found in each cluster.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Cross-tabulating clusters vs. predicted cell types reveals annotation quality and cluster purity.**
+
+**What to look for:**
+
+**Good predictions:**
+- Each cluster is dominated by one cell type (high purity)
+- Each cell type maps to one or few clusters
+- Biologically sensible (e.g., CD4 T cells and CD8 T cells may be in separate clusters)
+
+**Potential issues:**
+- **Mixed clusters**: One cluster contains multiple cell types → may need higher resolution clustering or represents transition states
+- **Split cell types**: One cell type spread across many clusters → over-clustering, or genuine subtypes
+- **Unexpected combinations**: Biologicaly implausible mixtures → poor integration or annotation errors
+
+**Biological interpretation:**
+- Some heterogeneity is expected (T cells include many subtypes)
+- Doublets may appear as mixed-type clusters
+- Activated vs. resting states of the same cell type may cluster separately
+:::
 
 ```{python}
 #| label: distributions
@@ -322,9 +513,44 @@ tmp.plot.bar(stacked=True).legend(bbox_to_anchor=(1.8, 1),loc='upper right')
 
 ## Ingest
 
-Another method for celltype prediction is Ingest, for more information,
+Another method for celltype prediction is ingest. For more information,
 please look at
 https://scanpy-tutorials.readthedocs.io/en/latest/integrating-data-using-ingest.html
+
+::: {.callout-note}
+## Why run this code?
+
+**Ingest projects query cells onto a reference embedding** using a different strategy than Scanorama integration.
+
+**How ingest works:**
+
+**1. Use reference structure:**
+- The reference has already been processed (PCA, neighbors, UMAP)
+- Instead of re-computing everything jointly, **project** query cells into this existing space
+
+**2. Find neighbors:**
+- For each query cell, find its nearest neighbors in the reference (in PCA space)
+- Use these neighbors to estimate where the query cell should sit in the reference UMAP
+
+**3. Transfer labels:**
+- Assign labels based on nearest reference neighbors
+- Query cells inherit labels from their reference neighbors
+
+**Advantages:**
+- **Fast**: No need to recompute everything
+- **Stable reference**: Reference structure doesn't change
+- **Scalable**: Can map many query datasets to one reference
+
+**Disadvantages:**
+- **Query doesn't influence reference**: Good if reference is high-quality, bad if query has unique biology
+- **Assumes query is a subset of reference**: Novel cell types will be misclassified
+- **Less flexible** than joint integration
+
+**When to use:**
+- Well-established reference atlas
+- Query expected to contain only known cell types
+- Need to map many datasets consistently to same reference
+:::
 
 ```{python}
 #| label: ingest
@@ -332,8 +558,8 @@ sc.tl.ingest(adata, adata_ref, obs='louvain')
 sc.pl.umap(adata, color=['louvain','leiden_0.6'], wspace=0.5)
 ```
 
-As you can see, ingest has created a new umap for us, so to get
-consistent plotting, lets revert back to the old one for further
+As you can see, ingest has created a new UMAP for us, so to get
+consistent plotting, let's revert back to the old one for further
 plotting:
 
 ```{python}
@@ -343,7 +569,7 @@ adata.obsm["X_umap"] = adata.obsm["X_umap_uncorr"]
 sc.pl.umap(adata, color=['louvain','leiden_0.6'], wspace=0.5)
 ```
 
-Now plot how many cells of each celltypes can be found in each cluster.
+Now plot how many cells of each cell type can be found in each cluster.
 
 ```{python}
 #| label: distributions-ingest
@@ -359,6 +585,48 @@ are following the steps of this
 [tutorial](https://colab.research.google.com/github/Teichlab/celltypist/blob/main/docs/notebook/celltypist_tutorial.ipynb),
 with some adaptations for this dataset. So please check out the tutorial
 for more detail.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Celltypist uses machine learning models trained on large-scale reference atlases** to predict cell types. It's like using a highly trained expert system rather than manually comparing to a reference.
+
+**How it differs from label transfer:**
+
+**Label transfer (previous methods):**
+- Compares your cells to reference cells directly
+- Assigns label of most similar reference cells
+- Requires integrating your data with the reference
+
+**Celltypist (machine learning classifier):**
+- Trains a model on reference data (logistic regression)
+- Model learns gene expression patterns that define each cell type
+- Applies this learned model to your cells without integration
+- Provides **confidence scores** and can leave cells "unassigned"
+
+**Key features:**
+
+**1. Pretrained models:**
+- Trained on massive datasets (100,000s of cells)
+- Cover many tissues: immune (our focus), lung, liver, gut, etc.
+- Regularly updated with latest references
+
+**2. Hierarchical predictions:**
+- **Low resolution**: Broad categories (T cells, myeloid cells)
+- **High resolution**: Specific subtypes (CD4+ naive T cells, classical monocytes)
+- Can choose based on your needs
+
+**3. Majority voting:**
+- Initial predictions are per-cell
+- **Majority voting** smooths predictions using local neighborhoods
+- Reduces noise, increases confidence
+
+**When to use Celltypist:**
+- Standard cell types in well-studied tissues
+- Want confidence scores
+- Don't want to find/process a reference yourself
+- Need consistent annotations across multiple studies
+:::
 
 ```{python}
 #| label: fetch-celltypist
@@ -380,9 +648,36 @@ model
 ```
 
 To infer celltype labels to our cells, we first need to convert back to
-the full matrix. OBS! For celltypist we want to have log1p normalised
-expression to 10,000 counts per cell. Which we already have in
-`adata.raw.X`, check by summing up the data, it should sum to 10K.
+the full matrix. **OBS!** For Celltypist we want to have log1p normalized
+expression to 10,000 counts per cell, which we already have in
+`adata.raw.X`. Check by summing up the data; it should sum to 10K.
+
+::: {.callout-note}
+## Why run this code?
+
+**Celltypist requires specific data preprocessing: log1p-normalized counts scaled to 10,000 total counts per cell.**
+
+**Why this format?**
+- **Consistency**: The model was trained on data preprocessed this way
+- **Normalization**: Accounts for sequencing depth differences
+- **Log transformation**: Stabilizes variance
+- **10K scaling**: Standard in the field, makes counts interpretable
+
+**What happens if you use wrong format?**
+- Model trained on normalized data won't work on raw counts
+- Scaled/regressed data will give incorrect predictions
+- Results will be unreliable
+
+**Checking the sum:**
+```python
+adata.X.expm1().sum(axis=1)
+```
+- `expm1()` reverses log1p transformation: $e^x - 1$
+- Sum should be ~10,000 for each cell
+- Small deviations are OK (due to gene filtering after normalization)
+
+We already have this in `adata.raw.X` from our initial preprocessing!
+:::
 
 ```{python}
 #| label: from-raw
@@ -398,10 +693,39 @@ predictions.predicted_labels
 ```
 
 The first column `predicted_labels` is the predictions made for each
-individual cell, while `majority_voting` is done for local subclusters,
+individual cell, while `majority_voting` is done for local subclusters;
 the clustering identities are in column `over_clustering`.
 
-Now we convert the predictions to an anndata object.
+::: {.callout-note}
+## Why run this code?
+
+**Celltypist provides two types of predictions:**
+
+**1. `predicted_labels` (per-cell):**
+- Each cell gets an independent prediction
+- Based solely on that cell's gene expression
+- Can be noisy (single-cell data has dropout, stochasticity)
+
+**2. `majority_voting` (smoothed):**
+- Creates mini-clusters of similar cells (`over_clustering`)
+- Within each mini-cluster, assigns the majority cell type to all cells
+- **Rationale**: True cell types should cluster together; outlier predictions are likely errors
+- More robust, reduces noise
+
+**`over_clustering`:**
+- Leiden clustering at very high resolution
+- Creates many small, homogeneous clusters
+- Used as neighborhood for majority voting
+- Not the same as your biological clustering
+
+**Which to use?**
+- **Per-cell predictions**: If you want individual cell resolution, need rare cell detection
+- **Majority voting**: If you want robust consensus, reduce technical noise (recommended for most analyses)
+
+**Confidence scores** (if requested): Indicate prediction certainty; low scores suggest ambiguous cells.
+:::
+
+Now we convert the predictions to an AnnData object.
 
 ```{python}
 #| label: plot-celltypist
@@ -410,25 +734,50 @@ adata = predictions.to_adata()
 sc.pl.umap(adata, color = ['leiden_0.6', 'predicted_labels', 'majority_voting'], legend_loc = 'on data')
 ```
 
-<div>
+::: {.callout-important}
+## Task
 
-> **Task**
->
-> Rerun predictions with Celltypist, but use another model, for instance
-> `Immune_All_High.pkl`, or any other model you find relevant, you can
-> find a list of models [here](https://www.celltypist.org/models). How
-> do the results differ for you?
-
-</div>
+Rerun predictions with Celltypist, but use another model, for instance
+`Immune_All_Low.pkl`, or any other model you find relevant. You can
+find a list of models [here](https://www.celltypist.org/models). How
+do the results differ for you?
+:::
 
 ### Celltypist custom model
 
 We can also train our own model on any reference data that we want to
-use. In this case we will use the pbmc data in `adata_ref` to train a
+use. In this case we will use the PBMC data in `adata_ref` to train a
 model.
 
-Celltypist requires the data to be in the format of log1p normalised
-expression to 10,000 counts per cell, we can check if that is the case
+::: {.callout-tip}
+## Biological Relevance
+
+**Training a custom Celltypist model is useful when:**
+
+**1. Pretrained models don't match your tissue/species:**
+- Working with mouse, non-model organism, or rare tissue
+- Novel cell types not in public atlases
+- Very specific experimental context
+
+**2. You have a high-quality reference:**
+- Well-annotated dataset from your lab
+- Published atlas specific to your system
+- Better match to your experimental conditions
+
+**3. You want full control:**
+- Choose exactly which cell types to include
+- Define your own annotation granularity
+- Optimize for your specific use case
+
+**Trade-offs:**
+- **Pretrained models**: Trained on huge datasets (more robust), but may not perfectly match your context
+- **Custom models**: Perfect match to your reference, but limited by reference size and quality
+
+**Our example**: Training on pbmc3k to see if it performs better than the generic immune model for our specific PBMC dataset.
+:::
+
+Celltypist requires the data to be in the format of log1p normalized
+expression to 10,000 counts per cell. We can check if that is the case
 for the object we have:
 
 ```{python}
@@ -437,7 +786,7 @@ adata_ref.raw.X.expm1().sum(axis = 1)[:10]
 ```
 
 These should all sum up to 10K, which is not the case, probably since
-some genes were removed after normalizing. Wo we will have to start from
+some genes were removed after normalizing. So we will have to start from
 the raw counts of that dataset instead. Before we selected the data
 `pbmc3k_processed`, but now we will instead use `pbmc3k`.
 
@@ -448,7 +797,7 @@ adata_ref2
 ```
 
 This data is not annotated, so we will have to match the indices from
-the filtered and processed object. And add in the metadata with
+the filtered and processed object and add in the metadata with
 annotations.
 
 ```{python}
@@ -471,21 +820,54 @@ adata_ref2.X.expm1().sum(axis = 1)[:10]
 
 And finally train the model.
 
+::: {.callout-note}
+## Why run this code?
+
+**Training a Celltypist model involves:**
+
+**Parameters:**
+- **`labels='louvain'`**: Which metadata column contains cell type annotations
+- **`n_jobs=10`**: Parallel processing for speed
+- **`feature_selection=True`**: Automatically selects most informative genes for each cell type
+
+**What happens:**
+1. **Feature selection** (if enabled):
+   - Identifies genes that best distinguish each cell type
+   - Reduces dimensionality and noise
+   - Typically selects hundreds to thousands of genes
+
+2. **Model training**:
+   - Fits a **logistic regression classifier** for each cell type
+   - Learns gene expression weights that predict cell type membership
+   - Uses regularization to prevent overfitting
+
+3. **Model output**:
+   - Trained classifier ready to predict on new data
+   - Contains learned parameters (gene weights per cell type)
+   - Can be saved and reused
+
+**Logistic regression advantages:**
+- Interpretable: Can see which genes are most important
+- Fast prediction
+- Provides probability scores
+- Works well with high-dimensional sparse data
+:::
+
 ```{python}
 #| label: celltypist-train
 new_model = celltypist.train(adata_ref2, labels = 'louvain', n_jobs = 10, feature_selection = True)
 ```
 
-Now we can run predictions on our data
+Now we can run predictions on our data.
 
 ```{python}
 #| label: celltypist-pred
 predictions2 = celltypist.annotate(adata, model = new_model, majority_voting = True)
 ```
 
-Instead of converting the predictions to anndata we will just add
-another column in the `adata.obs` with these new predictions since the
-column names from the previous celltypist runs with clash.
+Instead of converting the predictions to AnnData we will just add
+another column in `adata.obs` with these new predictions since the
+column names from the previous Celltypist runs will clash.
 
 ```{python}
 #| label: celltypist-save
@@ -500,12 +882,46 @@ sc.pl.umap(adata, color = ['predicted_labels', 'majority_voting','predicted_labe
 
 ## Compare results
 
-The predictions from ingest is stored in the column 'louvain' while we
-named the label transfer with scanorama as 'predicted'
+The predictions from ingest are stored in the column 'louvain' while we
+named the label transfer with Scanorama as 'label_trans'.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Comparing predictions across methods is critical for confidence in cell type assignments.**
+
+**What to look for:**
+
+**1. Consensus:**
+- Do all methods agree on major cell types? (Good sign)
+- Are discrepancies in ambiguous regions? (Expected)
+- Check if differences are biologically plausible
+
+**2. Method-specific patterns:**
+- **Scanorama + label transfer**: Smooth, continuous predictions (integration blends cells)
+- **Ingest**: May be more discrete (projection onto reference structure)
+- **Celltypist**: Can leave cells unassigned (provides confidence filtering)
+
+**3. Known biology:**
+- Do marker genes support the predictions?
+- Are T cells expressing CD3E?
+- Are monocytes expressing CD14?
+
+**4. Problematic discrepancies:**
+- One method calls a cluster "B cells", another calls it "T cells" → investigate
+- Methods split one biological cluster differently → check if genuine subtypes
+- Unexpected cell types → could be contaminants, doublets, or novel biology
+
+**Resolution strategy:**
+1. Plot marker genes for disputed cell types
+2. Check if discrepancies occur in low-quality cells
+3. Use biological knowledge to adjudicate
+4. When in doubt, use the most conservative annotation or leave as "uncertain"
+:::
 
 ```{python}
 #| label: plot-all
-sc.pl.umap(adata, color=['louvain','label_trans','majority_voting', 'majority_voting_ref'], wspace=0.5, ncols=3)
+sc.pl.umap(adata, color=['louvain','label_trans','majority_voting', 'majority_voting_ref'], wspace=0.5, ncols=2)
 ```
 
 As you can see, the main celltypes are generally the same, but there are
@@ -525,6 +941,42 @@ for the tissue you are working on.
 
 You can either run it with a marker list from the ontology or a list of
 your choice as in the example below.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Marker gene-based annotation is the most biologically interpretable approach** because it directly checks if cells express genes known to define each cell type.
+
+**How it works:**
+
+**1. Define marker gene sets:**
+- Curated lists of genes for each cell type
+- Example: T cells = {CD3E, CD3D, CD3G}; B cells = {MS4A1, CD19, CD79A}
+- Can come from literature, databases, or expert knowledge
+
+**2. Find cluster markers:**
+- For each cluster, identify top differentially expressed genes
+- Compare these DEGs to the marker gene lists
+
+**3. Enrichment test:**
+- Is the cluster enriched for marker genes of a particular cell type?
+- Uses hypergeometric test (like pathway enrichment)
+- Significant enrichment → likely that cell type
+
+**Advantages:**
+- **Transparent**: Easy to see why a cluster got a label
+- **Flexible**: Can use custom, tissue-specific marker lists
+- **No reference needed**: Only requires marker gene lists
+- **Biological grounding**: Based on known biology, not just similarity
+
+**Disadvantages:**
+- **Quality depends on marker lists**: Poor markers → poor annotations
+- **Incomplete**: Not all cell types have well-defined markers
+- **Ambiguous cases**: Cells may express markers of multiple types (activated/transitioning cells)
+- **Resolution limited**: Hard to distinguish very similar cell types
+
+**Best practice**: Combine with reference-based methods for validation.
+:::
 
 ```{python}
 #| label: fetch-markers
@@ -554,6 +1006,32 @@ print(df.shape)
 df.index = df.cellName
 gene_dict = df.geneSymbol.str.split(",").to_dict()
 ```
+
+::: {.callout-note}
+## Why run this code?
+
+**Filtering marker gene sets for quality:**
+
+**`nG > 5`**: Minimum 5 genes per cell type
+- Too few genes → unreliable enrichment test
+- Noisy, low statistical power
+- Single genes can be misleading
+
+**`nG < 100`**: Maximum 100 genes per cell type
+- Too many genes → not specific
+- Probably includes genes not truly specific to that cell type
+- Dilutes signal
+
+**`cancerType == "Normal"`**: Only use markers from healthy tissue
+- Cancer markers may not apply to normal immune cells
+- Keeps annotations biologically relevant
+
+**Gene set sizes:**
+- **Ideal**: 10-50 genes per cell type
+- Specific enough to be informative
+- Large enough for robust statistics
+- Reflects core identity genes
+:::
 
 ```{python}
 #| label: dge
@@ -621,6 +1099,37 @@ for cl in adata.obs['leiden_0.6'].cat.categories:
         pred[cl] = "Unass"
 ```
 
+::: {.callout-note}
+## Why run this code?
+
+**The enrichment workflow:**
+
+**1. Get top 300 DEGs per cluster:**
+- These are genes that define the cluster's identity
+- 300 is arbitrary but reasonable (too few = miss signal, too many = add noise)
+
+**2. Test enrichment against marker gene sets:**
+- For each cell type's markers, test if they're over-represented in the DEGs
+- Uses hypergeometric test (same as pathway enrichment)
+
+**3. Assign label:**
+- Cell type with **lowest p-value** and **highest combined score**
+- Combined score = -log10(p-value) × (overlap/expected)
+- Accounts for both significance and effect size
+
+**4. Handle ties:**
+- If multiple cell types have identical scores, list all (e.g., "CD4 T cell / Regulatory T cell")
+- Reflects biological ambiguity
+
+**5. Unassigned clusters:**
+- If no significant enrichment → "Unass"
+- Could be low-quality cells, doublets, or cell types not in the marker database
+
+**Parameters:**
+- `background=adata.shape[1]`: Total number of genes (for hypergeometric test)
+- `cutoff=1`: Keep all results (we filter manually)
+:::
+
 ```{python}
 #| label: gsea-res
 # prediction per cluster
@@ -635,15 +1144,20 @@ adata.obs["GS_overlap_pred"] = prediction
 sc.pl.umap(adata, color='GS_overlap_pred')
 ```
 
-<div>
+::: {.callout-important}
+## Discuss
 
-> **Discuss**
->
-> As you can see, it agrees to some extent with the predictions from the
-> methods above, but there are clear differences, which do you think
-> looks better?
+As you can see, it agrees to some extent with the predictions from the
+methods above, but there are clear differences. Which do you think
+looks better?
 
-</div>
+**Questions to consider:**
+- Do marker-based predictions match reference-based predictions?
+- Where do they disagree, and why might that be?
+- Which method would you trust more, and in what situations?
+- How would you validate disputed annotations?
+- Are there clusters where all methods agree? Where all methods disagree?
+:::
 
 ## Save data
 
@@ -656,23 +1170,14 @@ adata.write_h5ad('data/covid/results/scanpy_covid_qc_dr_int_cl_ct-ctrl13.h5ad')
 
 ## Session info
 
-```{=html}
+````{=html}
 <details>
-```
-```{=html}
-<summary>
-```
-Click here
-```{=html}
-</summary>
-```
+<summary>Click here</summary>
 
 ```{python}
 #| label: session
 sc.logging.print_versions()
 ```
 
-```{=html}
 </details>
-```
-
+````

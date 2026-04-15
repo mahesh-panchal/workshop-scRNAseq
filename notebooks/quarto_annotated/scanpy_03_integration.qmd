@@ -9,36 +9,45 @@ jupyter:
     name: scanpy
 ---
 
+::::callout-note
+## Note
 
-<div>
+Code chunks run Python commands unless it starts with `%%bash`, in
+which case, those chunks run shell commands.
 
-> **Note**
->
-> Code chunks run Python commands unless it starts with `%%bash`, in
-> which case, those chunks run shell commands.
-
-</div>
+::::
 
 In this tutorial we will look at different ways of integrating multiple
-single cell RNA-seq datasets. We will explore a few different methods to
+single-cell RNA-seq datasets. We will explore a few different methods to
 correct for batch effects across datasets. Seurat uses the data
-integration method presented in Comprehensive Integration of Single Cell
-Data, while Scran and Scanpy use a mutual Nearest neighbour method
+integration method presented in *Comprehensive Integration of Single Cell
+Data*, while Scran and Scanpy use a mutual nearest neighbor method
 (MNN). Below you can find a list of some methods for single data
 integration:
 
-  -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-  Markdown          Language          Library           Ref
-  ----------------- ----------------- ----------------- -----------------------------------------------------------------------------------------------------------------------------------
-  CCA               R                 Seurat            [Cell](https://www.sciencedirect.com/science/article/pii/S0092867419305598?via%3Dihub)
+| Method | Language | Library | Reference |
+|--------|----------|---------|-----------|
+| CCA | R | Seurat | [Cell](https://www.sciencedirect.com/science/article/pii/S0092867419305598?via%3Dihub) |
+| MNN | R/Python | Scater/Scanpy | [Nat. Biotech.](https://www.nature.com/articles/nbt.4091) |
+| Conos | R | conos | [Nat. Methods](https://www.nature.com/articles/s41592-019-0466-z?error=cookies_not_supported&code=5680289b-6edb-40ad-9934-415dac4fdb2f) |
+| Scanorama | Python | scanorama | [Nat. Biotech.](https://www.nature.com/articles/s41587-019-0113-3) |
 
-  MNN               R/Python          Scater/Scanpy     [Nat. Biotech.](https://www.nature.com/articles/nbt.4091)
+::: {.callout-tip}
+## Biological Relevance
 
-  Conos             R                 conos             [Nat.
-                                                        Methods](https://www.nature.com/articles/s41592-019-0466-z?error=cookies_not_supported&code=5680289b-6edb-40ad-9934-415dac4fdb2f)
+**Batch effects are technical variation that can obscure real biological differences.** Imagine conducting a clinical trial where one hospital uses one thermometer brand and another hospital uses a different brand. If the thermometers are slightly miscalibrated, you might see temperature differences between hospitals that have nothing to do with the actual patients' health.
 
-  Scanorama         Python            scanorama         [Nat. Biotech.](https://www.nature.com/articles/s41587-019-0113-3)
-  -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Similarly in single-cell experiments:
+- Samples processed on **different days** may have different RNA degradation
+- Different **sequencing runs** may have different capture efficiencies
+- Different **experimenters** may introduce subtle handling differences
+- **COVID vs. control samples** might have been processed in different batches
+
+**Data integration (batch correction)** computationally removes these technical differences while preserving true biological variation. This allows us to:
+- Compare COVID-19 vs. control samples fairly
+- Identify cell types consistently across all samples
+- Detect disease-specific changes that aren't just batch artifacts
+:::
 
 ## Data preparation
 
@@ -95,9 +104,20 @@ print(adata.X.shape)
 ```
 
 As the stored AnnData object contains scaled data based on variable
-genes, we need to make a new object with the logtransformed normalized
+genes, we need to make a new object with the log-transformed normalized
 counts. The new variable gene selection should not be performed on the
 scaled data matrix.
+
+::: {.callout-note}
+## Why run this code?
+
+**Integration methods work best on normalized, log-transformed counts rather than scaled data.** Here's why:
+
+- **Scaled data** (Z-scores) have been centered and standardized, which removes the absolute expression scale needed for many integration algorithms
+- **Normalized, log-transformed counts** preserve the relative expression relationships between genes while reducing technical noise
+
+We retrieve the data from `adata.raw` which contains all genes with normalized, log-transformed counts (not just highly variable genes with scaling applied).
+:::
 
 ```{python}
 #| label: from-raw
@@ -108,7 +128,7 @@ print("Highly variable genes: %d"%sum(var_genes_all))
 
 adata = adata.raw.to_adata() 
 
-# in some versions of Anndata there is an issue with information on the logtransformation in the slot log1p.base so we set it to None to not get errors.
+# in some versions of Anndata there is an issue with information on the log transformation in the slot log1p.base so we set it to None to not get errors.
 adata.uns['log1p']['base']=None
 
 # check that the matrix looks like normalized counts
@@ -120,12 +140,43 @@ print(adata.X[1:10,1:10])
 Variable genes can be detected across the full dataset, but then we run
 the risk of getting many batch-specific genes that will drive a lot of
 the variation. Or we can select variable genes from each batch
-separately to get only celltype variation. In the dimensionality
+separately to get only cell type variation. In the dimensionality
 reduction exercise, we already selected variable genes, so they are
 already stored in `adata.var.highly_variable`.
 
 Detect variable genes in each dataset separately using the `batch_key`
 parameter.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**The choice of variable genes affects which biological signals we preserve during integration.** Consider two scenarios:
+
+**Scenario 1: Variable genes from all data together**
+- May include genes that vary primarily *between batches* rather than between cell types
+- Example: A gene highly expressed in batch 1 but low in batch 2 due to technical differences
+- Risk: Integration might over-correct and remove real biological differences
+
+**Scenario 2: Variable genes per batch**
+- Identifies genes that vary *within* each batch (more likely to be biological)
+- Selects genes that distinguish cell types consistently across batches
+- More conservative, but safer for integration
+
+By requiring genes to be variable in **multiple batches**, we find genes that consistently mark cell type differences regardless of technical batch effects.
+:::
+
+::: {.callout-note}
+## Why run this code?
+
+The `batch_key='sample'` parameter tells Scanpy to:
+
+1. **Split the dataset** by sample
+2. **Calculate highly variable genes** for each sample independently
+3. **Track how many batches** each gene is variable in (stored in `highly_variable_nbatches`)
+4. **Identify intersection**: Genes variable in ALL batches (`highly_variable_intersection`)
+
+This helps distinguish biological variation (consistent across batches) from technical variation (batch-specific).
+:::
 
 ```{python}
 #| label: hvg2
@@ -147,19 +198,17 @@ print("Any batch var genes: %d"%sum(var_genes_batch))
 print("All data var genes: %d"%sum(var_genes_all))
 print("Overlap: %d"%sum(var_genes_batch & var_genes_all))
 print("Variable genes in all batches: %d"%sum(adata.var.highly_variable_nbatches == 6))
-print("Overlap batch instersection and all: %d"%sum(var_genes_all & adata.var.highly_variable_intersection))
+print("Overlap batch intersection and all: %d"%sum(var_genes_all & adata.var.highly_variable_intersection))
 ```
 
-<div>
+::: {.callout-important}
+## Discuss
 
-> **Discuss**
->
-> Did you understand the difference between running variable gene
-> selection per dataset and combining them vs running it on all samples
-> together. Can you think of any situation where it would be best to run
-> it on all samples and a situation where it should be done by batch?
-
-</div>
+Did you understand the difference between running variable gene
+selection per dataset and combining them vs. running it on all samples
+together? Can you think of any situation where it would be best to run
+it on all samples and a situation where it should be done by batch?
+:::
 
 Select all genes that are variable in at least 2 datasets and use for
 remaining analysis.
@@ -171,7 +220,7 @@ var_genes = var_select.index[var_select]
 len(var_genes)
 ```
 
-Run scaling and pca with that set of genes.
+Run scaling and PCA with that set of genes.
 
 ```{python}
 #| label: hvg5
@@ -184,8 +233,8 @@ sc.pp.scale(adata)
 sc.pp.pca(adata, svd_solver='arpack', random_state=573)
 ```
 
-Before running integrations and new dimensionality reduction, lets save
-the old Umap and tSNE into a new slot in `obsm`.
+Before running integrations and new dimensionality reduction, let's save
+the old UMAP and tSNE into a new slot in `obsm`.
 
 ```{python}
 #| label: save-raw
@@ -195,9 +244,42 @@ adata.obsm['X_tsne_uncorr'] = adata.obsm['X_tsne']
 
 ## BBKNN
 
-First, we will run BBKNN, it takes the anndata object and calculates a
-knn graph that is batch balanced. We can then use that graph to run
-Umap, tSNE and/or clustering.
+First, we will run BBKNN, it takes the AnnData object and calculates a
+k-nearest neighbor graph that is batch balanced. We can then use that graph to run
+UMAP, tSNE and/or clustering.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**BBKNN (Batch Balanced K-Nearest Neighbors) builds cell-to-cell connections while accounting for batch membership.** Think of it like creating a social network where you ensure each person has friends from different schools, not just their own school.
+
+In standard KNN:
+- Each cell finds its 20 nearest neighbors in gene expression space
+- Problem: Batch effects mean cells often find neighbors only from the same batch
+
+In BBKNN:
+- Each cell finds its nearest neighbors **from each batch separately**
+- If you have 8 batches and want 20 neighbors total, it finds ~2-3 neighbors per batch
+- This forces integration while preserving true biological neighbors
+
+**Advantage**: Works directly on the neighbor graph, so downstream clustering and visualization naturally incorporate batch correction.
+:::
+
+::: {.callout-note}
+## Why run this code?
+
+**BBKNN modifies the neighbor graph construction:**
+
+1. **Standard neighbors**: Find 20 nearest cells globally → batch-biased
+2. **BBKNN**: Find top neighbors from *each batch independently* → batch-balanced
+
+The algorithm:
+- Trims the global KNN graph to remove batch-specific edges
+- Builds a batch-balanced graph by sampling neighbors proportionally from each batch
+- Returns a connectivity matrix that downstream tools (UMAP, Leiden clustering) can use
+
+After BBKNN, we re-run UMAP and tSNE using this batch-corrected neighbor graph.
+:::
 
 ```{python}
 #| label: bbknn
@@ -217,10 +299,10 @@ dimensions.
 ```{python}
 #| label: plot-bbknn
 fig, axs = plt.subplots(2, 2, figsize=(10,8),constrained_layout=True)
-sc.pl.embedding(adata, "X_umap_uncorr",color="sample", title="Uncorrected umap", ax=axs[0,0], show=False)
-sc.pl.embedding(adata, "X_tsne_uncorr",color="sample", title="Uncorrected tsne", ax=axs[0,1], show=False)
-sc.pl.embedding(adata, "X_umap_bbknn",color="sample", title="BBKNN Corrected umap", ax=axs[1,0], show=False)
-sc.pl.embedding(adata, "X_tsne_bbknn",color="sample", title="BBKNN Corrected tsne", ax=axs[1,1], show=False)
+sc.pl.embedding(adata, "X_umap_uncorr",color="sample", title="Uncorrected UMAP", ax=axs[0,0], show=False)
+sc.pl.embedding(adata, "X_tsne_uncorr",color="sample", title="Uncorrected tSNE", ax=axs[0,1], show=False)
+sc.pl.embedding(adata, "X_umap_bbknn",color="sample", title="BBKNN Corrected UMAP", ax=axs[1,0], show=False)
+sc.pl.embedding(adata, "X_tsne_bbknn",color="sample", title="BBKNN Corrected tSNE", ax=axs[1,1], show=False)
 ```
 
 Let's save the integrated data for further analysis.
@@ -235,10 +317,41 @@ adata.write_h5ad(save_file)
 ## Harmony
 
 An alternative method for integration is Harmony, for more details on
-the method, please se their paper [Nat.
+the method, please see their paper [Nat.
 Methods](https://www.nature.com/articles/s41592-019-0619-0). This method
 runs the integration on a dimensionality reduction, in most applications
 the PCA.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Harmony integrates data by iteratively adjusting cell positions in PCA space.** Imagine you have two overlapping photographs taken from slightly different angles. Harmony aligns them by finding common features and rotating/shifting one image to match the other.
+
+Harmony works by:
+1. **Clustering cells** in PCA space while accounting for batch
+2. **Calculating batch-specific centroids** for each cluster
+3. **Moving cells** toward the global cluster centroid, away from batch-specific positions
+4. **Iterating** until batch effects are minimized while preserving biological structure
+
+**Key advantage**: Soft clustering approach preserves continuous biological variation (like differentiation trajectories) better than hard batch-correction methods.
+:::
+
+::: {.callout-note}
+## Why run this code?
+
+**Harmony operates on low-dimensional embeddings (PCA) rather than raw gene expression:**
+
+The algorithm:
+1. Takes PCA coordinates as input (typically 30-50 PCs)
+2. Uses **fuzzy clustering** to assign cells to clusters with probabilities
+3. Calculates **batch correction factors** for each cluster
+4. **Adjusts PC coordinates** to remove batch-specific shifts
+5. Returns corrected PCA embeddings in `X_pca_harmony`
+
+After correction, we recalculate neighbors, UMAP, and tSNE using the harmonized PCA space.
+
+**Note**: The code includes a workaround for a known bug in `harmonypy==0.2.0` where the output shape is transposed.
+:::
 
 ```{python}
 #| label: harmony
@@ -272,10 +385,10 @@ sc.tl.leiden(adata, resolution=0.5, random_state=137)
 ```{python}
 #| label: plot-harmony
 fig, axs = plt.subplots(2, 2, figsize=(10,8),constrained_layout=True)
-sc.pl.embedding(adata, 'X_tsne_bbknn', color="sample", title="BBKNN tsne", ax=axs[0,0], show=False)
-sc.pl.tsne(adata, color="sample", title="Harmony tsne", ax=axs[0,1], show=False)
-sc.pl.embedding(adata, 'X_umap_bbknn', color="sample", title="BBKNN umap", ax=axs[1,0], show=False)
-sc.pl.umap(adata, color="sample", title="Harmony umap", ax=axs[1,1], show=False)
+sc.pl.embedding(adata, 'X_tsne_bbknn', color="sample", title="BBKNN tSNE", ax=axs[0,0], show=False)
+sc.pl.tsne(adata, color="sample", title="Harmony tSNE", ax=axs[0,1], show=False)
+sc.pl.embedding(adata, 'X_umap_bbknn', color="sample", title="BBKNN UMAP", ax=axs[1,0], show=False)
+sc.pl.umap(adata, color="sample", title="Harmony UMAP", ax=axs[1,1], show=False)
 ```
 
 Let's save the integrated data for further analysis.
@@ -293,13 +406,46 @@ adata.write_h5ad(save_file)
 
 ## Combat
 
-Batch correction can also be performed with combat. Note that ComBat
+Batch correction can also be performed with ComBat. Note that ComBat
 batch correction requires a dense matrix format as input (which is
 already the case in this example).
 
+::: {.callout-tip}
+## Biological Relevance
+
+**ComBat was originally developed for microarray data and uses a different statistical approach.** Think of it like adjusting test scores from different teachers—one teacher might grade easier than another, so ComBat estimates and removes this "teacher effect" while preserving true differences in student ability.
+
+ComBat:
+1. **Models batch effects** using an empirical Bayes framework
+2. **Estimates batch-specific parameters** for each gene (mean and variance shifts)
+3. **Adjusts gene expression** by removing these batch-specific effects
+4. **Shrinks estimates** toward overall values to avoid over-correction
+
+**Key difference**: ComBat corrects the actual gene expression values, while BBKNN and Harmony work on reduced dimensions (neighbors or PCs). This means ComBat-corrected data can be used for differential expression analysis.
+:::
+
+::: {.callout-note}
+## Why run this code?
+
+**ComBat works directly on the gene expression matrix:**
+
+The algorithm uses **empirical Bayes** to:
+1. **Standardize** each gene's expression across batches
+2. **Estimate batch parameters**: For each batch, calculate the mean shift and variance scaling for each gene
+3. **Pool information** across genes using empirical Bayes (assumes most genes have similar batch effects)
+4. **Adjust expression values**: Remove estimated batch effects from the count matrix
+
+**Important**: 
+- ComBat requires **dense matrices** (converts sparse to dense automatically)
+- Works on **normalized, log-transformed counts** (not raw counts)
+- Modifies `adata.X` directly with corrected values
+
+After ComBat, we re-run the full analysis pipeline: variable gene selection, PCA, neighbors, UMAP, tSNE.
+:::
+
 ```{python}
 #| label: combat
-# create a new object with lognormalized counts
+# create a new object with log-normalized counts
 adata_combat = sc.AnnData(X=adata.raw.X, var=adata.raw.var, obs = adata.obs)
 
 # first store the raw data 
@@ -309,8 +455,8 @@ adata_combat.raw = adata_combat
 sc.pp.combat(adata_combat, key='sample')
 ```
 
-Then we run the regular steps of dimensionality reduction on the combat
-corrected data. Variable gene selection, pca and umap with combat data.
+Then we run the regular steps of dimensionality reduction on the ComBat
+corrected data. Variable gene selection, PCA and UMAP with ComBat data.
 
 ```{python}
 #| label: process-combat
@@ -344,10 +490,10 @@ dimensions.
 ```{python}
 #| label: plot-combat
 fig, axs = plt.subplots(2, 2, figsize=(10,8),constrained_layout=True)
-sc.pl.tsne(adata, color="sample", title="Harmony tsne", ax=axs[0,0], show=False)
-sc.pl.tsne(adata_combat, color="sample", title="Combat tsne", ax=axs[0,1], show=False)
-sc.pl.umap(adata, color="sample", title="Harmony umap", ax=axs[1,0], show=False)
-sc.pl.umap(adata_combat, color="sample", title="Combat umap", ax=axs[1,1], show=False)
+sc.pl.tsne(adata, color="sample", title="Harmony tSNE", ax=axs[0,0], show=False)
+sc.pl.tsne(adata_combat, color="sample", title="ComBat tSNE", ax=axs[0,1], show=False)
+sc.pl.umap(adata, color="sample", title="Harmony UMAP", ax=axs[1,0], show=False)
+sc.pl.umap(adata_combat, color="sample", title="ComBat UMAP", ax=axs[1,1], show=False)
 ```
 
 Let's save the integrated data for further analysis.
@@ -371,10 +517,42 @@ Try out [Scanorama](https://github.com/brianhie/scanorama) for data
 integration as well. First we need to create individual AnnData objects
 from each of the datasets.
 
-*OBS!* There is a function `sc.external.pp.scanorama_integrate`
+**OBS!** There is a function `sc.external.pp.scanorama_integrate`
 implemented in the scanpy toolkit. However, it runs scanorama on the PCA
 embedding and does not give us nice results when we have tested it, so
 we are not using it here.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Scanorama uses a "panorama stitching" approach inspired by computer vision.** When your phone creates a panorama photo, it finds overlapping regions between consecutive photos and aligns them. Scanorama does something similar with single-cell datasets.
+
+Scanorama:
+1. **Identifies matching cells** across datasets (mutual nearest neighbors in gene expression space)
+2. **Finds "anchor" cells** that appear in multiple batches—these are the "overlapping regions"
+3. **Aligns datasets** by correcting the expression of cells in each batch toward their cross-batch neighbors
+4. **Integrates in stages**: First aligns the most similar datasets, then progressively adds more divergent ones
+
+**Advantage**: Particularly good when datasets have different cell type compositions (e.g., one batch missing a rare cell type).
+:::
+
+::: {.callout-note}
+## Why run this code?
+
+**Scanorama requires splitting the data into separate objects per batch:**
+
+The workflow:
+1. **Split** the AnnData object into one object per sample/batch
+2. **Subset** each to the shared variable genes
+3. **Run `scanorama.integrate_scanpy()`**: 
+   - Finds mutual nearest neighbors across datasets
+   - Computes correction vectors for each cell
+   - Stores corrected embeddings in `obsm['X_scanorama']` for each dataset
+4. **Concatenate** the corrected embeddings back into one matrix
+5. **Add to main object** as a new representation
+
+Unlike ComBat (which corrects expression values), Scanorama produces a corrected low-dimensional embedding similar to Harmony's approach.
+:::
 
 ```{python}
 #| label: prep-scanorama
@@ -437,10 +615,10 @@ dimensions.
 ```{python}
 #| label: plot-scanorama
 fig, axs = plt.subplots(2, 2, figsize=(10,8),constrained_layout=True)
-sc.pl.embedding(adata, 'X_tsne_harmony', color="sample", title="Harmony tsne", ax=axs[0,0], show=False)
-sc.pl.tsne(adata, color="sample", title="Scanorama tsne", ax=axs[0,1], show=False)
-sc.pl.embedding(adata, 'X_umap_harmony', color="sample", title="Harmony umap", ax=axs[1,0], show=False)
-sc.pl.umap(adata, color="sample", title="Scanorama umap", ax=axs[1,1], show=False)
+sc.pl.embedding(adata, 'X_tsne_harmony', color="sample", title="Harmony tSNE", ax=axs[0,0], show=False)
+sc.pl.tsne(adata, color="sample", title="Scanorama tSNE", ax=axs[0,1], show=False)
+sc.pl.embedding(adata, 'X_umap_harmony', color="sample", title="Harmony UMAP", ax=axs[1,0], show=False)
+sc.pl.umap(adata, color="sample", title="Scanorama UMAP", ax=axs[1,1], show=False)
 ```
 
 Let's save the integrated data for further analysis.
@@ -458,57 +636,93 @@ adata.write_h5ad(save_file)
 
 ## Overview all methods
 
-Now we will plot UMAPS with all three integration methods side by side.
+Now we will plot UMAPs with all integration methods side by side.
+
+::: {.callout-note}
+## Why run this code?
+
+**Comparing integration methods side-by-side reveals:**
+
+- **Mixing quality**: How well cells from different batches intermingle
+- **Cluster preservation**: Whether cell types remain distinct
+- **Over-correction**: If batches are perfectly mixed, you may have removed biological differences
+- **Under-correction**: If batches remain separate, technical effects persist
+
+**What to look for:**
+- Cells of the same type from different batches should cluster together
+- Distinct cell types should remain separated
+- COVID vs. control differences should be preserved (biological signal)
+- Sample-specific technical patterns should be minimized
+:::
 
 ```{python}
 #| label: plot-all
-fig, axs = plt.subplots(2, 3, figsize=(10,8),constrained_layout=True)
+fig, axs = plt.subplots(2, 3, figsize=(15,10),constrained_layout=True)
 sc.pl.embedding(adata, 'X_umap_uncorr', color="sample", title="Uncorrected", ax=axs[0,0], show=False)
 sc.pl.embedding(adata, 'X_umap_bbknn', color="sample", title="BBKNN", ax=axs[0,1], show=False)
-sc.pl.umap(adata_combat, color="sample", title="Combat", ax=axs[0,2], show=False)
+sc.pl.umap(adata_combat, color="sample", title="ComBat", ax=axs[0,2], show=False)
 sc.pl.embedding(adata, 'X_umap_harmony', color="sample", title="Harmony", ax=axs[1,0], show=False)
 sc.pl.umap(adata, color="sample", title="Scanorama", ax=axs[1,1], show=False)
 ```
 
-<div>
+::: {.callout-important}
+## Discuss
 
-> **Discuss**
->
-> Look at the different integration results, which one do you think
-> looks the best? How would you motivate selecting one method over the
-> other? How do you think you could best evaluate if the integration
-> worked well?
+- Look at the different integration results, which one do you think looks the best? 
+- How would you motivate selecting one method over the other? 
+- How do you think you could best evaluate if the integration worked well?
 
-</div>
+**Evaluation strategies to consider:**
+- Visual inspection of batch mixing
+- Silhouette scores for batch vs. cell type clustering
+- Marker gene expression patterns
+- Preservation of biological differences (COVID vs. control)
+- Downstream analysis performance (clustering, differential expression)
+:::
 
 ## Extra task
 
 Have a look at the documentation for
 [BBKNN](https://scanpy.readthedocs.io/en/latest/generated/scanpy.external.pp.bbknn.html#scanpy-external-pp-bbknn)
 
-Try changing some of the parameteres in BBKNN, such as distance metric,
-number of PCs and number of neighbors. How does the results change with
+Try changing some of the parameters in BBKNN, such as distance metric,
+number of PCs and number of neighbors. How does the result change with
 different parameters? Can you explain why?
+
+::: {.callout-note}
+## Why run this code?
+
+**Key BBKNN parameters to explore:**
+
+- **`neighbors_within_batch`**: How many neighbors to find per batch
+  - Higher → more batch mixing but risk over-correction
+  - Lower → preserves within-batch structure but may under-integrate
+  
+- **`n_pcs`**: Number of principal components to use
+  - More PCs → captures subtle biological variation (and noise)
+  - Fewer PCs → focuses on major variation patterns
+  
+- **`metric`**: Distance metric for finding neighbors
+  - `'euclidean'`: Standard distance in PC space
+  - `'cosine'`: Angle-based similarity, can help with scaling issues
+  
+- **`trim`**: How aggressively to trim batch-specific edges
+  - Higher → stronger batch correction
+  - Lower → more conservative integration
+
+Experiment with these to understand the bias-variance tradeoff in batch correction!
+:::
 
 ## Session info
 
-```{=html}
+````{=html}
 <details>
-```
-```{=html}
-<summary>
-```
-Click here
-```{=html}
-</summary>
-```
+<summary>Click here</summary>
 
 ```{python}
 #| label: session
 sc.logging.print_versions()
 ```
 
-```{=html}
 </details>
-```
-
+````

@@ -9,15 +9,13 @@ jupyter:
     name: scanpy
 ---
 
+::::callout-note
+## Note
 
-<div>
+Code chunks run Python commands unless it starts with `%%bash`, in
+which case, those chunks run shell commands.
 
-> **Note**
->
-> Code chunks run Python commands unless it starts with `%%bash`, in
-> which case, those chunks run shell commands.
-
-</div>
+::::
 
 ## Data preparation
 
@@ -74,8 +72,8 @@ variable gene selection.
 
 ```{python}
 #| label: normalize
-# normalize to depth 10 000
-## Commented out normalisation because the data is already normalized.
+# normalize to depth 10,000
+## Commented out normalization because the data is already normalized.
 # sc.pp.normalize_total(adata, target_sum=1e4)
 
 # log transform
@@ -94,6 +92,29 @@ We first need to define which features/genes are important in our
 dataset to distinguish cell types. For this purpose, we need to find
 genes that are highly variable across cells, which in turn will also
 provide a good separation of the cell clusters.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Not all genes are equally informative for identifying cell types.** Imagine comparing different types of cars—you'd focus on distinguishing features like "has 4 doors vs. 2 doors" or "sedan vs. SUV" rather than features common to all cars like "has wheels" or "uses gasoline."
+
+Similarly, some genes (like housekeeping genes) are expressed at similar levels in all cells and don't help distinguish cell types. **Highly variable genes (HVGs)** are those with significantly different expression levels across cells—these are the genes that define what makes a T cell different from a B cell, or an activated immune cell different from a resting one.
+
+By focusing on ~2,000-3,000 most variable genes instead of all ~20,000 human genes, we reduce noise and computational burden while retaining the biological signal that matters.
+:::
+
+::: {.callout-note}
+## Why run this code?
+
+The **highly variable genes (HVG) selection** algorithm:
+
+1. **Bins genes by mean expression**: Groups genes with similar average expression levels
+2. **Calculates variance**: Measures how much each gene's expression varies across cells
+3. **Normalizes variance**: Compares observed variance to expected variance for that expression level
+4. **Selects top genes**: Chooses genes with unexpectedly high variance (high dispersion)
+
+This removes constitutively expressed genes and very lowly expressed genes, focusing downstream analysis on biologically meaningful variation.
+:::
 
 ```{python}
 #| label: hvg
@@ -125,6 +146,31 @@ co-variates in the model. Then the residuals of the model are taken as
 the *regressed data*. Although perhaps not in the best way, batch effect
 regression can also be done here.
 
+::: {.callout-note}
+## Why run this code?
+
+**Scaling (Z-score normalization) and regression are preprocessing steps that prevent technical confounders from dominating the analysis:**
+
+**Scaling**: Transforms each gene to have mean = 0 and standard deviation = 1
+- **Why?** A highly expressed gene (e.g., 1000 counts average) naturally has more variance than a lowly expressed gene (10 counts average). Without scaling, PCA would only capture variation in highly expressed genes, missing important but lower-expressed markers.
+- Z-score formula: (value - mean) / standard deviation
+
+**Regression**: Removes the linear effect of technical variables
+- **Total counts**: Some cells simply captured more RNA; this isn't biology, it's sampling depth
+- **Percent mitochondria**: As discussed in QC, this often reflects technical quality rather than cell state
+- **How?** For each gene, fit: `expression ~ total_counts + pct_mt`, then replace expression values with the residuals (the variation *not* explained by these variables)
+
+**Max_value clipping** prevents outlier cells from skewing downstream analysis.
+:::
+
+::: {.callout-tip}
+## Biological Relevance
+
+Think of this like **adjusting for confounding variables in a medical study.** If you're studying whether a drug works, you want to account for patients' age, weight, and baseline health—otherwise, these factors might obscure the drug's true effect.
+
+Here, we're "adjusting" gene expression for technical factors (how much RNA we captured, whether the cell was damaged) so we can focus on genuine biological differences between cell types and conditions.
+:::
+
 ```{python}
 #| label: scale
 #run this line if you get the "AttributeError: swapaxes not found" 
@@ -143,6 +189,30 @@ Performing PCA has many useful applications and interpretations
 depending on the data used. In the case of single-cell data, we want to
 segregate samples based on gene expression patterns in the data.
 
+::: {.callout-tip}
+## Biological Relevance
+
+**PCA (Principal Component Analysis) is like finding the "most important directions" in your data.** Imagine you're describing the differences between people in a room. Instead of listing everyone's height, weight, age, shoe size, etc., you might summarize: "The main difference is tall vs. short people (PC1), and the second main difference is young vs. old people (PC2)."
+
+For single-cell data with ~2,000 genes, PCA finds the main "directions" of variation:
+- **PC1** might separate immune cells from each other (T cells vs. monocytes)
+- **PC2** might separate activated vs. resting cells
+- **PC3** might capture a technical batch effect
+
+Each PC is a combination of multiple genes working together. This reduces thousands of dimensions (genes) to dozens of dimensions (PCs) while retaining most of the information.
+:::
+
+::: {.callout-note}
+## Why run this code?
+
+**PCA decomposes the gene expression matrix into:**
+- **Principal Components (PCs)**: New axes that explain maximum variance, with each subsequent PC explaining progressively less
+- **Loadings**: The contribution of each gene to each PC (which genes define that direction)
+- **Embeddings**: Each cell's position along each PC
+
+The `svd_solver='arpack'` uses a sparse matrix algorithm optimized for large datasets. Setting `random_state` ensures reproducibility.
+:::
+
 To run PCA, you can use the function `pca()`.
 
 ```{python}
@@ -154,7 +224,7 @@ We then plot the first principal components.
 
 ```{python}
 #| label: pca-plot
-# plot more PCS
+# plot more PCs
 sc.pl.pca(adata, color='sample', components = ['1,2','3,4','5,6','7,8'], ncols=2)
 ```
 
@@ -170,9 +240,22 @@ sc.pl.pca_loadings(adata, components=[1,2,3,4,5,6,7,8])
 ```
 
 The function to plot loading genes only plots genes on the positive
-axes. Instead plot as a heatmaps, with genes on both positive and
-negative side, one per pc, and plot their expression amongst cells
-ordered by their position along the pc.
+axes. Instead plot as heatmaps, with genes on both positive and
+negative side, one per PC, and plot their expression amongst cells
+ordered by their position along the PC.
+
+::: {.callout-note}
+## Why run this code?
+
+**Loading plots reveal which genes drive each PC.** 
+
+Genes with high **positive loadings** are upregulated in cells on the positive end of that PC, while genes with high **negative loadings** are upregulated on the negative end. By examining the top loading genes:
+- You can interpret what biological process each PC represents
+- You can identify potential marker genes for cell populations
+- You can spot technical artifacts (e.g., if PC1 is dominated by mitochondrial genes, regression may have failed)
+
+The heatmap visualization orders cells by their PC score, showing the gradient of gene expression along that principal component axis.
+:::
 
 ```{python}
 #| label: pca-loadings-heatmap
@@ -199,14 +282,53 @@ We can also plot the amount of variance explained by each PC.
 sc.pl.pca_variance_ratio(adata, log=True, n_pcs = 50)
 ```
 
+::: {.callout-note}
+## Why run this code?
+
+**The elbow plot (scree plot) helps determine how many PCs to use in downstream analyses.**
+
+- **Early PCs**: Capture major biological variation (cell types, cell states)
+- **Middle PCs**: May capture subtle biological signals (rare cell types, secondary effects)
+- **Late PCs**: Mostly noise and technical variation
+
+The "elbow" is where the curve flattens, suggesting PCs after that point contribute little additional information. However, in single-cell data, even late PCs can contain signals from rare cell populations, so using 30-50 PCs is common practice.
+:::
+
 Based on this plot, we can see that the top 8 PCs retain a lot of
 information, while other PCs contain progressively less. However, it is
 still advisable to use more PCs since they might contain information
-about rare cell types (such as platelets and DCs in this dataset)
+about rare cell types (such as platelets and dendritic cells in this dataset).
 
 ## tSNE
 
 We will now run [BH-tSNE](https://arxiv.org/abs/1301.3342).
+
+::: {.callout-tip}
+## Biological Relevance
+
+**tSNE (t-Distributed Stochastic Neighbor Embedding) creates a 2D map of your cells where similar cells are placed close together.** Think of it like creating a map of a city where neighborhoods with similar characteristics (residential, commercial, industrial) are grouped together, even if they're scattered across the actual city.
+
+tSNE is particularly good at:
+- **Preserving local structure**: Cells of the same type cluster tightly together
+- **Revealing clusters**: Different cell types appear as distinct "islands"
+
+However, **be cautious**: 
+- Distances between clusters are **not meaningful** (two clusters that look far apart may not be more different than two close clusters)
+- The same data can look different with different parameters (perplexity, iterations)
+- It's primarily a visualization tool, not an analysis tool
+:::
+
+::: {.callout-note}
+## Why run this code?
+
+**tSNE is a non-linear dimensionality reduction method** that:
+
+1. Calculates **pairwise distances** between cells in high-dimensional PC space
+2. Creates a **probability distribution** of neighbors for each cell
+3. Optimizes a 2D embedding where **local neighborhoods** are preserved
+
+The `n_pcs = 30` parameter means we use the first 30 principal components as input (not the full gene expression matrix), reducing computation and noise. The `random_state` ensures reproducibility, as tSNE involves stochastic optimization.
+:::
 
 ```{python}
 #| label: tsne
@@ -226,6 +348,23 @@ sc.pl.tsne(adata, color='sample')
 The UMAP implementation in SCANPY uses a neighborhood graph as the
 distance matrix, so we need to first calculate the graph.
 
+::: {.callout-note}
+## Why run this code?
+
+**Computing the k-nearest neighbors (KNN) graph** is a prerequisite for UMAP:
+
+1. For each cell, find the `n_neighbors` (default 20) most similar cells based on Euclidean distance in PC space
+2. Create a graph where cells are nodes and edges connect neighbors
+3. Weight edges by similarity (closer neighbors = stronger edges)
+
+This graph representation:
+- Captures the **local structure** of the data (who is near whom)
+- Is used by UMAP for dimensionality reduction
+- Is also used for clustering (next lab)
+
+The `n_pcs = 30` parameter means we calculate neighbors using the first 30 PCs.
+:::
+
 ```{python}
 #| label: neighbors
 sc.pp.neighbors(adata, n_pcs = 30, n_neighbors = 20, random_state=159)
@@ -233,6 +372,37 @@ sc.pp.neighbors(adata, n_pcs = 30, n_neighbors = 20, random_state=159)
 
 We can now run [UMAP](https://arxiv.org/abs/1802.03426) for cell
 embeddings.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**UMAP (Uniform Manifold Approximation and Projection) is a newer alternative to tSNE** that also creates 2D visualizations of high-dimensional single-cell data.
+
+**UMAP advantages**:
+- **Preserves both local AND global structure**: Unlike tSNE, distances between clusters have some meaning
+- **Faster computation**: Especially for large datasets
+- **Deterministic**: More consistent results between runs
+- **Better for trajectory analysis**: Can show continuous transitions (e.g., cell differentiation)
+
+Both tSNE and UMAP are visualization tools—think of them as two different artists painting the same landscape. The same cell types should cluster together in both, but the overall "shape" of the map differs.
+:::
+
+::: {.callout-note}
+## Why run this code?
+
+**UMAP uses the neighborhood graph to:**
+
+1. Model the high-dimensional data as a **fuzzy topological structure** (a manifold)
+2. Create a similar structure in **low dimensions** (2D or 3D)
+3. Optimize the low-dimensional layout to match the high-dimensional structure
+
+Key parameters:
+- `n_components`: Number of dimensions for embedding (default=2 for visualization)
+- `min_dist`: Minimum distance between points in the embedding (controls how tightly cells pack)
+- `random_state`: Ensures reproducibility
+
+UMAP is based on mathematical theory from topology and Riemannian geometry, making it more principled than tSNE's heuristic approach.
+:::
 
 ```{python}
 #| label: umap
@@ -260,6 +430,17 @@ sc.pl.umap(umap10, color='sample', title="UMAP10",
 sc.pl.umap(adata, color='sample', title="UMAP", edges=True)
 ```
 
+::: {.callout-note}
+## Why run this code?
+
+**10-component UMAP** projects cells into 10 dimensions instead of 2. This:
+- Retains **more information** than 2D (useful for downstream clustering)
+- Allows visualization of **additional dimensions** (UMAP3 vs UMAP4, UMAP5 vs UMAP6, etc.)
+- Can reveal structure not visible in the first two components
+
+The **edge plot** visualizes the k-nearest neighbor graph, showing which cells are connected. Dense edge networks indicate tight clusters; bridges between clusters may indicate transitional cell states or doublets.
+:::
+
 We can now plot PCA, UMAP and tSNE side by side for comparison. Have a
 look at the UMAP and tSNE. What similarities/differences do you see? Can
 you explain the differences based on what you learned during the
@@ -277,32 +458,38 @@ sc.pl.umap(adata, color='sample', components=['1,2'], ax=axs[1, 0], show=False)
 
 Finally, we can compare the PCA, tSNE and UMAP.
 
-<div>
+::: {.callout-important}
+## Discuss
 
-> **Discuss**
->
-> We have now done Variable gene selection, PCA and UMAP with the
-> settings we selected for you. Test a few different ways of selecting
-> variable genes, number of PCs for UMAP and check how it influences
-> your embedding.
-
-</div>
+We have now done variable gene selection, PCA and UMAP with the
+settings we selected for you. Test a few different ways of selecting
+variable genes, number of PCs for UMAP and check how it influences
+your embedding.
+:::
 
 ## Genes of interest
 
 Let's plot some marker genes for different cell types onto the
 embedding.
 
-  Markers                    Cell Type
-  -------------------------- -------------------
-  CD3E                       T cells
-  CD3E CD4                   CD4+ T cells
-  CD3E CD8A                  CD8+ T cells
-  GNLY, NKG7                 NK cells
-  MS4A1                      B cells
-  CD14, LYZ, CST3, MS4A7     CD14+ Monocytes
-  FCGR3A, LYZ, CST3, MS4A7   FCGR3A+ Monocytes
-  FCER1A, CST3               DCs
+::: {.callout-tip}
+## Biological Relevance
+
+**Marker genes are like molecular "badges" that identify cell types.** Just as a police officer wears a badge and uniform, different immune cells express characteristic proteins:
+
+| Markers | Cell Type | Function |
+|---------|-----------|----------|
+| CD3E | T cells | All T cells express the CD3 protein complex |
+| CD3E + CD4 | CD4+ T cells | "Helper" T cells that coordinate immune responses |
+| CD3E + CD8A | CD8+ T cells | "Killer" T cells that destroy infected cells |
+| GNLY, NKG7 | NK cells | Natural Killer cells that attack tumors and infected cells |
+| MS4A1 | B cells | Antibody-producing cells (MS4A1 is also called CD20) |
+| CD14, LYZ, CST3, MS4A7 | CD14+ Monocytes | "Classical" monocytes that become macrophages |
+| FCGR3A, LYZ, CST3, MS4A7 | FCGR3A+ Monocytes | "Non-classical" monocytes that patrol blood vessels |
+| FCER1A, CST3 | DCs | Dendritic cells that present antigens to T cells |
+
+By overlaying these markers on our UMAP/tSNE, we can **annotate** which clusters correspond to which cell types.
+:::
 
 ```{python}
 #| label: plot-markers
@@ -315,6 +502,23 @@ data by using `use_raw=False`. However, not all of these genes are
 included in the variable gene set, and hence are not included in the
 scaled `adata.X`, so we first need to filter them.
 
+::: {.callout-note}
+## Why run this code?
+
+**The `use_raw` parameter controls which data matrix is plotted:**
+
+- `use_raw=True` (default): Uses `adata.raw.X` - **normalized, log-transformed counts for ALL genes**
+  - Best for visualizing absolute expression levels
+  - Allows plotting any gene, even those not in the HVG set
+  
+- `use_raw=False`: Uses `adata.X` - **scaled, regressed data for HVGs only**
+  - Shows relative expression after removing technical effects
+  - Only available for highly variable genes
+  - Better for comparing expression patterns after batch correction
+
+Since marker genes may not all be highly variable (some are consistently expressed in their cell type), we filter to only those present in the HVG set before plotting with `use_raw=False`.
+:::
+
 ```{python}
 #| label: plot-markers2
 genes  = ["CD3E", "CD4", "CD8A", "GNLY","NKG7", "MS4A1","CD14","LYZ","CST3","MS4A7","FCGR3A"]
@@ -324,15 +528,13 @@ varg = [x for x in genes if x in var_genes.index[var_genes]]
 sc.pl.umap(adata, color=varg, use_raw=False)
 ```
 
-<div>
+::: {.callout-important}
+## Discuss
 
-> **Discuss**
->
-> Select some of your dimensionality reductions and plot some of the QC
-> stats that were calculated in the previous lab. Can you see if some of
-> the separation in your data is driven by quality of the cells?
-
-</div>
+Select some of your dimensionality reductions and plot some of the QC
+stats that were calculated in the previous lab. Can you see if some of
+the separation in your data is driven by quality of the cells?
+:::
 
 ```{python}
 #| label: plot-qc
@@ -352,11 +554,31 @@ adata.write_h5ad('data/covid/results/scanpy_covid_qc_dr.h5ad')
 
 Just as a reminder, you need to keep in mind what you have in the X
 matrix. After these operations you have an X matrix with only variable
-genes, that are normalized, logtransformed and scaled.
+genes, that are normalized, log-transformed and scaled.
 
 We stored the expression of all genes in `raw.X` after doing
-lognormalization so that matrix is a sparse matrix with logtransformed
+log-normalization so that matrix is a sparse matrix with log-transformed
 values.
+
+::: {.callout-warning}
+## Important: Understanding your data matrices
+
+After this workflow, your AnnData object contains **two different data representations**:
+
+**`adata.X`**: 
+- Contains only ~2,000-3,000 highly variable genes (columns)
+- Normalized, log-transformed, **regressed**, and **scaled** (Z-scored)
+- Mean = 0, standard deviation = 1 for each gene
+- Used for: PCA, clustering, heatmaps
+
+**`adata.raw.X`**:
+- Contains all ~20,000 genes (columns)
+- Normalized and log-transformed only
+- Preserves biological scale of expression
+- Used for: Marker gene visualization, differential expression
+
+Always check which matrix you're using for downstream analyses! Using the wrong one can lead to misinterpretation.
+:::
 
 ```{python}
 #| label: check-data
@@ -369,23 +591,14 @@ print(adata.raw.X[:10,:10])
 
 ## Session info
 
-```{=html}
+````{=html}
 <details>
-```
-```{=html}
-<summary>
-```
-Click here
-```{=html}
-</summary>
-```
+<summary>Click here</summary>
 
 ```{python}
 #| label: session
 sc.logging.print_versions()
 ```
 
-```{=html}
 </details>
-```
-
+````

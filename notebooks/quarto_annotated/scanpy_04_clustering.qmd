@@ -9,18 +9,16 @@ jupyter:
     name: scanpy
 ---
 
+::::callout-note
+## Note
 
-<div>
+Code chunks run Python commands unless it starts with `%%bash`, in
+which case, those chunks run shell commands.
 
-> **Note**
->
-> Code chunks run Python commands unless it starts with `%%bash`, in
-> which case, those chunks run shell commands.
-
-</div>
+::::
 
 In this tutorial we will continue the analysis of the integrated
-dataset. We will use the scanpy enbedding to perform the clustering
+dataset. We will use the Scanpy embedding to perform the clustering
 using graph community detection algorithms.
 
 Let's first load all necessary libraries and also the integrated dataset
@@ -67,28 +65,92 @@ adata
 
 ## Graph clustering
 
-The procedure of clustering on a Graph can be generalized as 3 main
-steps:\
-- Build a kNN graph from the data.\
-- Prune spurious connections from kNN graph (optional step). This is a
-SNN graph.\
-- Find groups of cells that maximizes the connections within the group
-compared other groups.
+The procedure of clustering on a graph can be generalized as 3 main
+steps:
 
-In Scanpy we do not build an SNN graph, instead the community detection
+1. Build a k-nearest neighbor (kNN) graph from the data.
+2. Prune spurious connections from kNN graph (optional step). This creates a shared nearest neighbor (SNN) graph.
+3. Find groups of cells that maximize the connections within the group compared to other groups.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Clustering identifies cell types and states by grouping cells with similar gene expression.** Think of it like organizing a diverse crowd of people into groups based on their clothing—people wearing lab coats cluster together (scientists), people in scrubs cluster together (healthcare workers), and so on.
+
+In single-cell analysis:
+- **Each cluster ideally represents a distinct cell type or cell state** (e.g., CD4+ T cells, CD8+ T cells, monocytes, B cells)
+- Cells cluster together because they express similar sets of genes that define their identity and function
+- The number and resolution of clusters depends on biological heterogeneity and your analytical choices
+
+**Why clustering matters:**
+- Enables identification of rare cell populations
+- Reveals disease-associated cell states (e.g., activated immune cells in COVID-19)
+- Allows cell-type-specific analyses (differential expression, trajectory inference)
+- Provides biological context for interpreting gene expression patterns
+:::
+
+::: {.callout-note}
+## Why run this code?
+
+**Graph-based clustering is particularly well-suited for single-cell data because:**
+
+1. **Scales well**: Efficient with thousands to millions of cells
+2. **Handles non-spherical clusters**: Unlike k-means, can find irregularly shaped cell populations
+3. **Data-driven**: Doesn't require pre-specifying exact number of clusters
+4. **Robust to noise**: Graph connectivity helps filter spurious relationships
+
+**The graph-based approach:**
+
+**Step 1: Build kNN graph**
+- For each cell, find its k most similar cells (neighbors) based on distance in PCA/integrated space
+- Create edges connecting each cell to its neighbors
+- Edge weights reflect similarity (closer cells = stronger edges)
+
+**Step 2: Community detection**
+- Apply algorithms (Leiden, Louvain) that partition the graph into "communities"
+- Communities are groups of nodes (cells) with dense internal connections and sparse external connections
+- This identifies natural groupings in the data
+
+**Step 3: Optimize modularity**
+- Modularity measures how well-separated the communities are
+- Higher modularity = better-defined clusters
+:::
+
+In Scanpy we do not build an SNN graph; instead the community detection
 is done on the KNN graph which we construct using the command
 `sc.pp.neighbors()`.
 
 The main options to consider are:
 
--   **n_pcs** - the number of dimensions from the initial reduction to
-    include when calculating distances between cells.
--   **n_neighbors** - the number of neighbors per cell to include in the
-    KNN graph.
+- **n_pcs** - the number of dimensions from the initial reduction to include when calculating distances between cells.
+- **n_neighbors** - the number of neighbors per cell to include in the KNN graph.
 
 In this case, we will use the integrated data using Harmony. If you
-recall, we stored the harmony reduction in `X_pca_harmony` in the
+recall, we stored the Harmony reduction in `X_pca_harmony` in the
 previous lab.
+
+::: {.callout-note}
+## Why run this code?
+
+**Key parameters for neighbor graph construction:**
+
+**`n_neighbors` (20)**:
+- Controls local vs. global structure
+- Higher values (50-100): Broader, more connected clusters
+- Lower values (5-15): Tighter, more granular clusters
+- Default of 15-30 works well for most datasets
+
+**`n_pcs` (30)**:
+- How many principal components to use for distance calculations
+- More PCs: Captures subtle biological variation (and potentially noise)
+- Fewer PCs: Focuses on major sources of variation
+- 20-50 is typical; based on elbow plot from PCA
+
+**`use_rep='X_pca_harmony'`**:
+- Uses the batch-corrected Harmony embedding instead of raw PCA
+- Ensures clustering is based on integrated data where batch effects are minimized
+- Critical for fair clustering across experimental batches
+:::
 
 ```{python}
 #| label: neighbors
@@ -99,11 +161,38 @@ sc.pp.neighbors(adata, n_neighbors=20, n_pcs=30, use_rep='X_pca_harmony', random
 adata.obsm["X_umap"] = adata.obsm["X_umap_harmony"]
 ```
 
-The modularity optimization algoritm in Scanpy is *Leiden*. Previously
-ther was also *Louvain*, but since the Louvain algorithm is no longer
+The modularity optimization algorithm in Scanpy is *Leiden*. Previously
+there was also *Louvain*, but since the Louvain algorithm is no longer
 maintained, using Leiden is recommended by the Scanpy community.
 
 ### Leiden
+
+::: {.callout-note}
+## Why run this code?
+
+**The Leiden algorithm optimizes modularity to find communities in the neighbor graph:**
+
+**How it works:**
+1. **Initialize**: Each cell starts in its own cluster
+2. **Local moves**: Iteratively move cells between clusters to increase modularity
+3. **Refinement**: Recursively partition clusters to escape local optima
+4. **Aggregation**: Merge similar clusters
+
+**Resolution parameter**: Controls cluster granularity
+- **Low resolution (0.4)**: Fewer, larger clusters (broad cell types)
+- **Default (1.0)**: Moderate number of clusters
+- **High resolution (1.4+)**: Many small clusters (cell subtypes and states)
+
+**Why try multiple resolutions?**
+- Biological organization is hierarchical (e.g., "immune cells" → "T cells" → "CD4+ T cells" → "regulatory T cells")
+- Different resolutions reveal different levels of this hierarchy
+- No single "correct" resolution—depends on your biological question
+
+**Leiden vs. Louvain:**
+- Leiden is guaranteed to find well-connected communities (Louvain sometimes creates poorly connected clusters)
+- Leiden is faster and more consistent
+- Leiden is actively maintained
+:::
 
 ```{python}
 #| label: leiden
@@ -128,6 +217,28 @@ marker genes that we used in the Dim Reduction lab onto the clusters. If
 we set `dendrogram=True` the clusters are ordered by the dendrogram in
 the dotplot.
 
+::: {.callout-tip}
+## Biological Relevance
+
+**Dendrograms show hierarchical relationships between clusters**, similar to a family tree. Closely related clusters branch together, while distantly related clusters branch separately.
+
+For immune cells:
+- T cell clusters (CD4+, CD8+, regulatory T cells) branch together
+- Monocyte subtypes branch together
+- B cells form a separate branch
+
+This hierarchical view helps you:
+- Understand developmental relationships (e.g., stem cells → progenitors → mature cells)
+- Identify major cell lineages
+- Validate that your clustering makes biological sense
+- Decide whether to merge over-split clusters
+
+**Dot plots efficiently display marker gene expression across clusters:**
+- **Dot size**: Percentage of cells in the cluster expressing the gene
+- **Dot color**: Average expression level in expressing cells
+- Quickly identify which genes define which clusters
+:::
+
 ```{python}
 #| label: plot-dendro
 sc.tl.dendrogram(adata, groupby = "leiden_0.6")
@@ -147,6 +258,50 @@ low-dimensional distances). We need to define the number of clusters in
 advance. Since the results depend on the initialization of the cluster
 centers, it is typically recommended to run K-means with multiple
 starting configurations (via the `nstart` argument).
+
+::: {.callout-tip}
+## Biological Relevance
+
+**K-means is an alternative clustering approach that works differently from graph-based methods.** Imagine organizing people in a room by having them gather around designated "center points"—everyone moves to their nearest center, then the centers shift to the middle of each group, and the process repeats until stable.
+
+**K-means characteristics:**
+- **Assumes spherical clusters**: Each cluster is roughly circular/spherical in shape
+- **Pre-defined number of clusters**: You must specify k (number of clusters) in advance
+- **Distance-based**: Assigns cells to the nearest cluster center (centroid)
+
+**Advantages:**
+- Simple and fast
+- Deterministic results (with same initialization)
+- Works well when clusters are roughly equal-sized and spherical
+
+**Disadvantages for single-cell data:**
+- Biological cell populations are rarely spherical in gene expression space
+- Difficult to choose k without prior knowledge
+- Sensitive to outliers and batch effects
+- Less flexible than graph-based methods
+:::
+
+::: {.callout-note}
+## Why run this code?
+
+**K-means algorithm:**
+
+1. **Initialize**: Randomly place k cluster centroids in PCA space
+2. **Assignment**: Assign each cell to its nearest centroid (Euclidean distance)
+3. **Update**: Move each centroid to the mean position of its assigned cells
+4. **Iterate**: Repeat assignment and update until convergence
+
+**Implementation details:**
+- Applied to `X_pca_harmony` (30-dimensional batch-corrected space)
+- `random_state=0` ensures reproducibility
+- We try k=5, 10, and 15 to see how the number of clusters affects results
+- Results stored as categorical variables in `adata.obs`
+
+**Comparing to Leiden:**
+- K-means may split coherent cell populations or merge distinct types
+- Leiden adapts to the data structure; k-means imposes structure
+- Graph-based methods generally perform better for scRNA-seq
+:::
 
 ```{python}
 #| label: kmeans
@@ -176,48 +331,89 @@ adata.obsm
 ## Hierarchical clustering
 
 Hierarchical clustering is another generic form of clustering that can
-be applied also to scRNA-seq data. As K-means, it is typically applied
+be applied also to scRNA-seq data. As with K-means, it is typically applied
 to a reduced dimension representation of the data. Hierarchical
 clustering returns an entire hierarchy of partitionings (a dendrogram)
 that can be cut at different levels. Hierarchical clustering is done in
 these steps:
 
-1.  Define the distances between samples. The most common are Euclidean
-    distance (a.k.a. straight line between two points) or correlation
-    coefficients.
-2.  Define a measure of distances between clusters, called *linkage*
-    criteria. It can for example be average distances between clusters.
-    Commonly used methods are `single`, `complete`, `average`, `median`,
-    `centroid` and `ward`.
-3.  Define the dendrogram among all samples using **Bottom-up** or
-    **Top-down** approach. **Bottom-up** is where samples start with
-    their own cluster which end up merged pair-by-pair until only one
-    cluster is left. **Top-down** is where samples start all in the same
-    cluster that end up being split by 2 until each sample has its own
-    cluster.
+1. Define the distances between samples. The most common are Euclidean distance (a.k.a. straight line between two points) or correlation coefficients.
+2. Define a measure of distances between clusters, called *linkage* criteria. It can for example be average distances between clusters. Commonly used methods are `single`, `complete`, `average`, `median`, `centroid` and `ward`.
+3. Define the dendrogram among all samples using **Bottom-up** or **Top-down** approach. **Bottom-up** is where samples start with their own cluster which end up merged pair-by-pair until only one cluster is left. **Top-down** is where samples start all in the same cluster that end up being split by 2 until each sample has its own cluster.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Hierarchical clustering creates a tree (dendrogram) showing nested relationships between cells.** Think of it like a biological taxonomy: Kingdom → Phylum → Class → Order → Family → Genus → Species.
+
+In single-cell data:
+- **Broad branches**: Major cell lineages (myeloid vs. lymphoid)
+- **Finer branches**: Cell types (monocytes vs. dendritic cells)
+- **Terminal branches**: Cell states or subtypes
+
+**Advantages:**
+- Reveals hierarchical biological organization
+- No need to pre-specify number of clusters
+- Can "cut" the tree at any level to get different resolutions
+- The dendrogram itself is informative about cell relationships
+
+**Disadvantages:**
+- Computationally intensive for large datasets
+- Greedy algorithm: early mistakes can't be corrected
+- Sensitive to distance metric and linkage method choices
+:::
 
 As you might have realized, correlation is not a method implemented in
 the `dist()` function. However, we can create our own distances and
 transform them to a distance object. We can first compute sample
-correlations using the `cor` function.\
-As you already know, correlation range from -1 to 1, where 1 indicates
+correlations using the `cor` function.
+
+As you already know, correlation ranges from -1 to 1, where 1 indicates
 that two samples are closest, -1 indicates that two samples are the
 furthest and 0 is somewhat in between. This, however, creates a problem
 in defining distances because a distance of 0 indicates that two samples
 are closest, 1 indicates that two samples are the furthest and distance
 of -1 is not meaningful. We thus need to transform the correlations to a
-positive scale (a.k.a. **adjacency**):\
-$$adj = \frac{1- cor}{2}$$\
+positive scale (a.k.a. **adjacency**):
+
+$$adj = \frac{1- cor}{2}$$
+
 Once we transformed the correlations to a 0-1 scale, we can simply
 convert it to a distance object using `as.dist()` function. The
 transformation does not need to have a maximum of 1, but it is more
 intuitive to have it at 1, rather than at any other number.
 
 The function `AgglomerativeClustering` has the option of running with
-disntance metrics "euclidean", "l1", "l2", "manhattan", "cosine", or
-"precomputed". However, with ward linkage only euklidean distances
-works. Here we will try out euclidean distance and ward linkage
+distance metrics "euclidean", "l1", "l2", "manhattan", "cosine", or
+"precomputed". However, with ward linkage only Euclidean distances
+work. Here we will try out Euclidean distance and Ward linkage
 calculated in PCA space.
+
+::: {.callout-note}
+## Why run this code?
+
+**Agglomerative (bottom-up) hierarchical clustering:**
+
+**Algorithm:**
+1. **Start**: Each cell is its own cluster (n clusters)
+2. **Merge**: Find the two closest clusters and merge them
+3. **Repeat**: Continue merging until only k clusters remain
+4. **Result**: A dendrogram showing the merge history
+
+**Linkage methods** define "distance between clusters":
+- **Single**: Minimum distance between any two points
+- **Complete**: Maximum distance between any two points
+- **Average**: Mean distance between all pairs of points
+- **Ward**: Minimizes within-cluster variance (most common for scRNA-seq)
+
+**Ward linkage:**
+- Merges clusters that minimize the increase in total within-cluster variance
+- Tends to create compact, roughly equal-sized clusters
+- Works only with Euclidean distance
+- Generally gives good results for scRNA-seq data
+
+We run with n_clusters = 5, 10, 15 to compare different granularities.
+:::
 
 ```{python}
 #| label: hclust
@@ -235,7 +431,7 @@ adata.obs['hclust_15'] = cluster.fit_predict(X_pca).astype(str)
 sc.pl.umap(adata, color=['hclust_5', 'hclust_10', 'hclust_15'])
 ```
 
-Finally, lets save the clustered data for further analysis.
+Finally, let's save the clustered data for further analysis.
 
 ```{python}
 #| label: save
@@ -248,9 +444,28 @@ Now, we can select one of our clustering methods and compare the
 proportion of samples across the clusters.
 
 Select the "leiden_0.6" and plot proportion of samples per cluster and
-also proportion covid vs ctrl.
+also proportion COVID vs. ctrl.
 
 Plot proportion of cells from each condition per cluster.
+
+::: {.callout-tip}
+## Biological Relevance
+
+**Examining cluster composition helps identify batch effects and disease-specific populations:**
+
+**Expected patterns:**
+- **Balanced representation**: Most cell types should appear in both COVID and control samples
+- **Cell type markers**: Clusters should be defined by cell type (e.g., T cells, monocytes), not by sample or condition
+
+**Concerning patterns:**
+- **Sample-specific clusters**: If a cluster contains cells from only one sample, it may be a technical artifact
+- **Complete separation by condition**: If COVID and control cells never mix, integration may have failed
+
+**Interesting biological patterns:**
+- **Condition-enriched clusters**: More COVID cells in an "activated monocyte" cluster might indicate a disease response
+- **Altered proportions**: COVID samples having more of certain cell types (e.g., inflammatory monocytes) reflects biological changes
+- **Missing populations**: Absence of certain cell types in disease samples can be biologically meaningful
+:::
 
 ```{python}
 #| label: clust-distribution
@@ -263,7 +478,7 @@ tmp.plot.bar(stacked=True).legend(bbox_to_anchor=(1.4, 1),loc='upper right')
 
 In this case we have quite good representation of each sample in each
 cluster. But there are clearly some biases with more cells from one
-sample in some clusters and also more covid cells in some of the
+sample in some clusters and also more COVID cells in some of the
 clusters.
 
 We can also plot it in the other direction, the proportion of each
@@ -275,43 +490,83 @@ tmp = pd.crosstab(adata.obs['sample'],adata.obs['leiden_0.6'], normalize='index'
 tmp.plot.bar(stacked=True).legend(bbox_to_anchor=(1.4, 1), loc='upper right')
 ```
 
-<div>
+::: {.callout-important}
+## Discuss
 
-> **Discuss**
->
-> By now you should know how to plot different features onto your data.
-> Take the QC metrics that were calculated in the first exercise, that
-> should be stored in your data object, and plot it as violin plots per
-> cluster using the clustering method of your choice. For example, plot
-> number of UMIS, detected genes, percent mitochondrial reads. Then,
-> check carefully if there is any bias in how your data is separated by
-> quality metrics. Could it be explained biologically, or could there be
-> a technical bias there?
-
-</div>
+By now you should know how to plot different features onto your data.
+Take the QC metrics that were calculated in the first exercise, that
+should be stored in your data object, and plot it as violin plots per
+cluster using the clustering method of your choice. For example, plot
+number of UMIs, detected genes, percent mitochondrial reads. Then,
+check carefully if there is any bias in how your data is separated by
+quality metrics. Could it be explained biologically, or could there be
+a technical bias there?
+:::
 
 ```{python}
 #| label: plot-qc
 sc.pl.violin(adata, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt'], jitter=0.4, groupby = 'leiden_0.6', rotation= 45)
 ```
 
-Some clusters that are clearly defined by higher number of genes and
-counts. These are either doublets or a larger celltype. And some
+Some clusters are clearly defined by higher number of genes and
+counts. These are either doublets or a larger cell type. And some
 clusters with low values on these metrics that are either low quality
-cells or a smaller celltype. You will have to explore these clusters in
+cells or a smaller cell type. You will have to explore these clusters in
 more detail to judge what you believe them to be.
 
-## Subclustering of T and NK-cells
+::: {.callout-tip}
+## Biological Relevance
 
-It is common that the subtypes of cells within a cluster is not so well
+**Why do some cell types have more genes/UMIs than others?**
+
+**Cell size matters:**
+- **Large cells** (monocytes, dendritic cells): More cytoplasm → more RNA → higher UMI counts
+- **Small cells** (naive T cells, red blood cells): Less cytoplasm → less RNA → lower UMI counts
+
+**Metabolic activity:**
+- **Active cells** (plasma B cells secreting antibodies): High transcription → many genes detected
+- **Quiescent cells** (resting memory cells): Lower transcriptional activity
+
+**Technical considerations:**
+- Very high counts + many genes = possible doublets
+- Very low counts + few genes = possible low-quality cells or genuinely small/inactive cells
+
+**Bottom line:** QC metric distributions across clusters can reflect genuine biology (cell size, activity) or technical issues (doublets, broken cells). Context and marker genes help distinguish these scenarios.
+:::
+
+## Subclustering of T and NK cells
+
+It is common that the subtypes of cells within a cluster are not so well
 separated when you have a heterogeneous dataset. In such a case it could
-be a good idea to run subclustering of individual celltypes. The main
+be a good idea to run subclustering of individual cell types. The main
 reason for subclustering is that the variable genes and the first
 principal components in the full analysis are mainly driven by
-differences between celltypes, while with subclustering we may detect
-smaller differences between subtypes within celltypes.
+differences between cell types, while with subclustering we may detect
+smaller differences between subtypes within cell types.
 
-So first, lets find out where our T-cell and NK-cell clusters are. We
+::: {.callout-tip}
+## Biological Relevance
+
+**Subclustering reveals fine-grained cell states within a major cell type.** Imagine studying "students" as a broad category—you'd initially separate students from teachers and administrators. But within students, there are meaningful subcategories: freshmen vs. seniors, STEM majors vs. humanities, full-time vs. part-time.
+
+Similarly, "T cells" is a broad category containing:
+- **CD4+ helper T cells**: Coordinate immune responses
+- **CD8+ cytotoxic T cells**: Kill infected cells
+- **Regulatory T cells**: Suppress excessive immune responses
+- **Memory vs. naive T cells**: Experienced vs. inexperienced
+- **Activated vs. resting T cells**: Currently fighting infection vs. on standby
+
+In the full dataset analysis:
+- Variable genes are dominated by T cells vs. monocytes vs. B cells (major differences)
+- Subtle differences between CD4+ and CD8+ T cells may be obscured
+
+After subsetting to only T cells:
+- Variable genes now capture CD4 vs. CD8 vs. regulatory differences
+- PCA axes represent T-cell-specific variation
+- Clustering can resolve T cell subtypes
+:::
+
+So first, let's find out where our T-cell and NK-cell clusters are. We
 know that T-cells express CD3E, and the main subtypes are CD4 and CD8,
 while NK-cells express GNLY.
 
@@ -326,8 +581,8 @@ sc.pl.umap(adata, color="CD8A", ax=axs[1,0], show=False)
 sc.pl.umap(adata, color="GNLY", ax=axs[1,1], show=False)
 ```
 
-We can clearly see what clusters are T-cell clusters, so lets subset the
-data for those cells
+We can clearly see what clusters are T-cell clusters, so let's subset the
+data for those cells.
 
 ```{python}
 #| label: select-tcells
@@ -339,9 +594,26 @@ tcells.obs["sample"].value_counts()
 
 Ideally we should rerun all steps of integration with that subset of
 cells instead of just taking the joint embedding. If you have too few
-cells per sample in the celltype that you want to cluster it may not be
+cells per sample in the cell type that you want to cluster it may not be
 possible. We will start with selecting a new set of genes that better
-reflecs the variability within this celltype
+reflects the variability within this cell type.
+
+::: {.callout-note}
+## Why run this code?
+
+**Subclustering workflow requires reprocessing from normalized counts:**
+
+1. **Subset cells**: Extract only T/NK cells based on cluster membership
+2. **Retrieve raw counts**: Use `tcells.raw.to_adata()` to get normalized, log-transformed counts for all genes
+3. **Reselect variable genes**: The variable genes for all cell types (dominated by T vs. B vs. myeloid differences) won't capture T cell subtype variation well
+4. **Reprocess**: Run HVG selection, scaling, PCA, integration, clustering on this subset
+
+**Why not just recluster the existing embedding?**
+- The existing PCA was optimized for separating T cells from other cell types
+- We need a new PCA optimized for separating T cell *subtypes*
+- Variable genes like CD3E (expressed in all T cells) aren't useful for T cell subclustering
+- New variable genes might include CD4, CD8A, TCR genes, activation markers
+:::
 
 ```{python}
 #| label: hvg-tcells
@@ -349,15 +621,15 @@ sc.pp.highly_variable_genes(tcells, min_mean=0.0125, max_mean=3, min_disp=0.5)
 
 
 print("Full data:" , sum(adata.var.highly_variable ))
-print("Tcells:" , sum(tcells.var.highly_variable))
+print("T cells:" , sum(tcells.var.highly_variable))
 print("Intersection:" , sum(tcells.var.highly_variable & adata.var.highly_variable))
 ```
 
-We clearly have a very different geneset now, so hopefully it should
+We clearly have a very different gene set now, so hopefully it should
 better capture the variability within T-cells.
 
-Now we have to run the full pipeline with scaling, pca, integration and
-clustering on this subset of cells, using the new set of variable genes
+Now we have to run the full pipeline with scaling, PCA, integration and
+clustering on this subset of cells, using the new set of variable genes.
 
 ```{python}
 #| label: subclustering
@@ -395,12 +667,12 @@ sc.tl.umap(tcells, random_state=331)
 ```{python}
 #| label: plot-subcluster
 fig, axs = plt.subplots(2, 3, figsize=(10,8),constrained_layout=True)
-sc.pl.umap(tcells, color="sample", title="Tcell umap", ax=axs[0,0], show=False)
-sc.pl.embedding(tcells, 'X_umap_harmony', color="sample", title="Full umap", ax=axs[1,0], show=False)
-sc.pl.umap(tcells, color="leiden_0.6", title="Tcell umap, full clust", ax=axs[0,1], show=False)
-sc.pl.embedding(tcells, 'X_umap_harmony', color="leiden_0.6", title="Full umap, full clust", ax=axs[1,1], show=False)
-sc.pl.umap(tcells, color="tcells_0.6", title="Tcell umap, tcell clust", ax=axs[0,2], show=False)
-sc.pl.embedding(tcells, 'X_umap_harmony', color="tcells_0.6", title="Full umap, tcell clust", ax=axs[1,2], show=False)
+sc.pl.umap(tcells, color="sample", title="T cell UMAP", ax=axs[0,0], show=False)
+sc.pl.embedding(tcells, 'X_umap_harmony', color="sample", title="Full UMAP", ax=axs[1,0], show=False)
+sc.pl.umap(tcells, color="leiden_0.6", title="T cell UMAP, full clust", ax=axs[0,1], show=False)
+sc.pl.embedding(tcells, 'X_umap_harmony', color="leiden_0.6", title="Full UMAP, full clust", ax=axs[1,1], show=False)
+sc.pl.umap(tcells, color="tcells_0.6", title="T cell UMAP, T cell clust", ax=axs[0,2], show=False)
+sc.pl.embedding(tcells, 'X_umap_harmony', color="tcells_0.6", title="Full UMAP, T cell clust", ax=axs[1,2], show=False)
 ```
 
 As you can see, we do have some new clusters that did not stand out
@@ -408,7 +680,7 @@ before. But in general the separation looks very similar.
 
 We can plot the subtype genes again. If you try plotting the genes with
 `use_raw=False` you will notice that some of the genes are not in the
-`adata.X` matrix. Since they are no longer included in the variable
+`adata.X` matrix, since they are no longer included in the variable
 genes. So now we have to plot with `use_raw=True`.
 
 ```{python}
@@ -420,36 +692,30 @@ sc.pl.umap(tcells, color="CD8A", ax=axs[1,0], show=False, use_raw=True)
 sc.pl.umap(tcells, color="GNLY", ax=axs[1,1], show=False, use_raw=True)
 ```
 
-<div>
+::: {.callout-important}
+## Discuss
 
-> **Discuss**
->
-> Have a look at the T-cells in the umaps with all cells or only T/NK
-> cells. What are the main differences? Do you think it improved with
-> subclustering? Also, there are some cells in these clusters that fall
-> far away from the rest in the UMAPs, why do you think that is?
+- Have a look at the T-cells in the UMAPs with all cells or only T/NK cells. What are the main differences? 
+- Do you think it improved with subclustering? 
+- Also, there are some cells in these clusters that fall far away from the rest in the UMAPs, why do you think that is?
 
-</div>
+**Consider:**
+- Are CD4+ and CD8+ T cells better separated after subclustering?
+- Do you see additional T cell states (activated, memory, regulatory)?
+- What might cause outlier cells (doublets, low quality, transitional states)?
+- Would you use the full dataset clusters or subcluster results for downstream analysis?
+:::
 
 ## Session info
 
-```{=html}
+````{=html}
 <details>
-```
-```{=html}
-<summary>
-```
-Click here
-```{=html}
-</summary>
-```
+<summary>Click here</summary>
 
 ```{python}
 #| label: session
 sc.logging.print_versions()
 ```
 
-```{=html}
 </details>
-```
-
+````
