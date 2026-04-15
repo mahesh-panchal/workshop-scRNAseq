@@ -3,7 +3,13 @@ project:
   output-dir: _output
   render:
     - index.qmd
-    - notebooks/quarto_annotated/
+    - notebooks/quarto_annotated/scanpy_01_qc.qmd
+    - notebooks/quarto_annotated/scanpy_02_dimred.qmd
+    - notebooks/quarto_annotated/scanpy_03_integration.qmd
+    - notebooks/quarto_annotated/scanpy_04_clustering.qmd
+    - notebooks/quarto_annotated/scanpy_05_dge.qmd
+    - notebooks/quarto_annotated/scanpy_06_celltyping.qmd
+    # - notebooks/quarto_annotated/scanpy_07_trajectory.qmd
 
 website:
   title: "Single-Cell RNA-Seq Analysis with Scanpy"
@@ -25,8 +31,8 @@ website:
             href: notebooks/quarto_annotated/scanpy_05_dge.qmd
           - text: "Cell Type Prediction"
             href: notebooks/quarto_annotated/scanpy_06_celltyping.qmd
-          - text: "Trajectory Inference"
-            href: notebooks/quarto_annotated/scanpy_07_trajectory.qmd
+          # - text: "Trajectory Inference"
+          #   href: notebooks/quarto_annotated/scanpy_07_trajectory.qmd
 
 # Quarto caching configuration
 execute:
