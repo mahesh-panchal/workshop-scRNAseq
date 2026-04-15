@@ -1,0 +1,678 @@
+---
+description: Assignment of cell identities based on gene expression patterns using reference data.
+subtitle: Scanpy Toolkit
+title: Celltype prediction
+jupyter:
+  kernelspec:
+    display_name: scanpy
+    language: python
+    name: scanpy
+---
+
+
+<div>
+
+> **Note**
+>
+> Code chunks run Python commands unless it starts with `%%bash`, in
+> which case, those chunks run shell commands.
+
+</div>
+
+Celltype prediction can either be performed on indiviudal cells where
+each cell gets a predicted celltype label, or on the level of clusters.
+All methods are based on similarity to other datasets, single cell or
+sorted bulk RNAseq, or uses known marker genes for each cell type.\
+Ideally celltype predictions should be run on each sample separately and
+not using the integrated data. In this case we will select one sample
+from the Covid data, `ctrl_13` and predict celltype by cell on that
+sample.\
+Some methods will predict a celltype to each cell based on what it is
+most similar to, even if that celltype is not included in the reference.
+Other methods include an uncertainty so that cells with low similarity
+scores will be unclassified.\
+There are multiple different methods to predict celltypes, here we will
+just cover a few of those.
+
+Here we will use a reference PBMC dataset that we get from scanpy
+datasets and classify celltypes based on two methods:
+
+-   Using scanorama for integration just as in the integration lab, and
+    then do label transfer based on closest neighbors.
+-   Using ingest to project the data onto the reference data and
+    transfer labels.
+-   Using Celltypist to predicted with a pretrained pbmc model or with
+    an own model based on the same reference data as the other methods.
+
+First, lets load required libraries
+
+```{python}
+#| label: libraries
+import numpy as np
+import pandas as pd
+import scanpy as sc
+import matplotlib.pyplot as plt
+import warnings
+import os
+import subprocess
+
+warnings.simplefilter(action="ignore", category=Warning)
+
+# verbosity: errors (0), warnings (1), info (2), hints (3)
+sc.settings.verbosity = 2
+sc.settings.set_figure_params(dpi=80)
+```
+
+Let's read in the saved Covid-19 data object from the clustering step.
+
+```{python}
+#| label: data-download-func
+# download pre-computed data if missing or long compute
+
+import requests
+from urllib.parse import urljoin
+from tqdm.auto import tqdm
+
+path_data = "https://nextcloud.dc.scilifelab.se/public.php/webdav/"
+auth_credentials = ("zbC5fr2LbEZ9rSE", "scRNAseq2025")
+
+def download_file(url, destination_path, auth=None):
+    
+    if os.path.exists(destination_path):
+        print(f"File already exists: '{destination_path}'. Skipping download.")
+        return
+
+    # Ensure the target directory exists before writing
+    os.makedirs(os.path.dirname(destination_path), exist_ok=True)
+    
+    print(f"Initiating download for {url}...")
+    
+    try:
+        with requests.get(url, auth=auth, stream=True) as response:
+            response.raise_for_status() # Check for HTTP errors
+            
+            total_size = int(response.headers.get('content-length', 0))
+            filename = os.path.basename(destination_path)
+            
+            with open(destination_path, 'wb') as f:
+                with tqdm(total=total_size, unit='iB', unit_scale=True, desc=filename) as pbar:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                            pbar.update(len(chunk))
+                            
+        print(f"Successfully downloaded: {filename}\n")
+        
+    except Exception as e:
+        # Cleanup on failure
+        if os.path.exists(destination_path):
+            os.remove(destination_path)
+            print(f"Cleaned up incomplete file: {destination_path}")
+        print(f"Download failed due to: {e}\n")
+        raise 
+```
+
+```{python}
+#| label: fetch-data-h5ad
+
+# Download the HDF5 file
+h5ad_url = urljoin(path_data, "covid/results_scanpy/scanpy_covid_qc_dr_int_cl.h5ad")
+h5ad_path = "data/covid/results/scanpy_covid_qc_dr_int_cl.h5ad"
+download_file(url=h5ad_url, destination_path=h5ad_path, auth=auth_credentials)
+
+print("Loading data into Scanpy...")
+adata = sc.read_h5ad(h5ad_path)
+print(adata)
+```
+
+```{python}
+#| label: check-data
+adata.uns['log1p']['base']=None
+print(adata.shape)
+# have only variable genes in X, use raw instead.
+adata = adata.raw.to_adata()
+print(adata.shape)
+```
+
+Subset one patient.
+
+```{python}
+#| label: subset
+adata = adata[adata.obs["sample"] == "ctrl_13",:]
+print(adata.shape)
+```
+
+```{python}
+#| label: count-cells
+adata.obs["leiden_0.6"].value_counts()
+```
+
+Some clusters have very few cells from this individual, so any cluster
+comparisons may be biased by this.
+
+```{python}
+#| label: plot-umap
+sc.pl.umap(
+    adata, color=["leiden_0.6"], palette=sc.pl.palettes.default_20
+)
+```
+
+## Reference data
+
+Load the reference data from `scanpy.datasets`. It is the annotated and
+processed pbmc3k dataset from 10x.
+
+```{python}
+#| label: fetch-ref
+adata_ref = sc.datasets.pbmc3k_processed() 
+
+adata_ref.obs['sample']='pbmc3k'
+
+print(adata_ref.shape)
+adata_ref.obs
+```
+
+As you can see, the celltype annotation is in the metadata column
+`louvain`, so that is the column we will have to use for classification.
+
+```{python}
+#| label: plot-ref
+sc.pl.umap(adata_ref, color='louvain')
+```
+
+Make sure we have the same genes in both datset by taking the
+intersection
+
+```{python}
+#| label: intersect-genes
+# before filtering genes, store the full matrix in raw.
+adata.raw = adata
+# also store the umap in a new slot as it will get overwritten
+adata.obsm["X_umap_uncorr"] = adata.obsm["X_umap"]
+
+print(adata_ref.shape[1])
+print(adata.shape[1])
+var_names = adata_ref.var_names.intersection(adata.var_names)
+print(len(var_names))
+
+adata_ref = adata_ref[:, var_names]
+adata = adata[:, var_names]
+```
+
+First we need to rerun pca and umap with the same gene set for both
+datasets.
+
+```{python}
+#| label: process-ref
+sc.pp.pca(adata_ref, random_state=573)
+sc.pp.neighbors(adata_ref, random_state=159)
+sc.tl.umap(adata_ref, random_state=331)
+sc.pl.umap(adata_ref, color='louvain')
+```
+
+```{python}
+#| label: process-data
+sc.pp.pca(adata, random_state=573)
+sc.pp.neighbors(adata, random_state=159)
+sc.tl.umap(adata, random_state=331)
+sc.pl.umap(adata, color='leiden_0.6')
+```
+
+## Integrate with scanorama
+
+```{python}
+#| label: integrate
+import scanorama
+
+#subset the individual dataset to the same variable genes as in MNN-correct.
+alldata = dict()
+alldata['ctrl']=adata
+alldata['ref']=adata_ref
+
+#convert to list of AnnData objects
+adatas = list(alldata.values())
+
+# run scanorama.integrate
+scanorama.integrate_scanpy(adatas, dimred = 50)
+```
+
+```{python}
+#| label: scanorama-results
+# add in sample info
+adata_ref.obs['sample']='pbmc3k'
+
+# create a merged scanpy object and add in the scanorama 
+adata_merged = alldata['ctrl'].concatenate(alldata['ref'], batch_key='sample', batch_categories=['ctrl','pbmc3k'])
+
+embedding = np.concatenate([ad.obsm['X_scanorama'] for ad in adatas], axis=0)
+adata_merged.obsm['Scanorama'] = embedding
+```
+
+```{python}
+#| label: process-scanorama
+#run  umap.
+sc.pp.neighbors(adata_merged, n_pcs =50, use_rep = "Scanorama", random_state=159)
+sc.tl.umap(adata_merged, random_state=331)
+```
+
+```{python}
+#| label: plot-scanorama
+sc.pl.umap(adata_merged, color=["sample","louvain"])
+```
+
+### Label transfer
+
+Using the functions from the [Spatial
+tutorial](https://scanpy.readthedocs.io/en/stable/tutorials/spatial/integration-scanorama.html)
+from Scanpy we will calculate normalized cosine distances between the
+two datasets and tranfer labels to the celltype with the highest scores.
+
+```{python}
+#| label: transfer
+from sklearn.metrics.pairwise import cosine_distances
+
+distances = 1 - cosine_distances(
+    adata_merged[adata_merged.obs['sample'] == "pbmc3k"].obsm["Scanorama"],
+    adata_merged[adata_merged.obs['sample'] == "ctrl"].obsm["Scanorama"],
+)
+
+def label_transfer(dist, labels, index):
+    lab = pd.get_dummies(labels)
+    class_prob = lab.to_numpy().T @ dist
+    norm = np.linalg.norm(class_prob, 2, axis=0)
+    class_prob = class_prob / norm
+    class_prob = (class_prob.T - class_prob.min(1)) / np.ptp(class_prob, 1)
+    # convert to df
+    cp_df = pd.DataFrame(
+        class_prob, columns=lab.columns
+    )
+    cp_df.index = index
+    # classify as max score
+    m = cp_df.idxmax(axis=1)
+    
+    return m
+
+class_def = label_transfer(distances, adata_ref.obs.louvain, adata.obs.index)
+
+# add to obs section of the original object
+adata.obs['label_trans'] = class_def
+
+sc.pl.umap(adata, color="label_trans")
+```
+
+```{python}
+#| label: plot-transfer
+# add to merged object.
+adata_merged.obs["label_trans"] = pd.concat(
+    [class_def, adata_ref.obs["louvain"]], axis=0
+).tolist()
+
+sc.pl.umap(adata_merged, color=["sample","louvain",'label_trans'])
+#plot only ctrl cells.
+sc.pl.umap(adata_merged[adata_merged.obs['sample']=='ctrl'], color='label_trans')
+```
+
+Now plot how many cells of each celltypes can be found in each cluster.
+
+```{python}
+#| label: distributions
+tmp = pd.crosstab(adata.obs['leiden_0.6'],adata.obs['label_trans'], normalize='index')
+tmp.plot.bar(stacked=True).legend(bbox_to_anchor=(1.8, 1),loc='upper right')
+```
+
+## Ingest
+
+Another method for celltype prediction is Ingest, for more information,
+please look at
+https://scanpy-tutorials.readthedocs.io/en/latest/integrating-data-using-ingest.html
+
+```{python}
+#| label: ingest
+sc.tl.ingest(adata, adata_ref, obs='louvain')
+sc.pl.umap(adata, color=['louvain','leiden_0.6'], wspace=0.5)
+```
+
+As you can see, ingest has created a new umap for us, so to get
+consistent plotting, lets revert back to the old one for further
+plotting:
+
+```{python}
+#| label: old-umap
+adata.obsm["X_umap"] = adata.obsm["X_umap_uncorr"]
+
+sc.pl.umap(adata, color=['louvain','leiden_0.6'], wspace=0.5)
+```
+
+Now plot how many cells of each celltypes can be found in each cluster.
+
+```{python}
+#| label: distributions-ingest
+tmp = pd.crosstab(adata.obs['leiden_0.6'],adata.obs['louvain'], normalize='index')
+tmp.plot.bar(stacked=True).legend(bbox_to_anchor=(1.8, 1),loc='upper right')
+```
+
+## Celltypist
+
+[Celltypist](https://www.celltypist.org/) provides pretrained models for
+classification for many different human tissues and celltypes. Here, we
+are following the steps of this
+[tutorial](https://colab.research.google.com/github/Teichlab/celltypist/blob/main/docs/notebook/celltypist_tutorial.ipynb),
+with some adaptations for this dataset. So please check out the tutorial
+for more detail.
+
+```{python}
+#| label: fetch-celltypist
+import celltypist
+from celltypist import models
+
+# there are many different models, we will only download 2 of them for now.
+models.download_models(force_update = False, model = 'Immune_All_Low.pkl')
+models.download_models(force_update = False, model = 'Immune_All_High.pkl')
+```
+
+Now select the model you want to use and show the info:
+
+```{python}
+#| label: celltypist-model
+model = models.Model.load(model = 'Immune_All_High.pkl')
+
+model
+```
+
+To infer celltype labels to our cells, we first need to convert back to
+the full matrix. OBS! For celltypist we want to have log1p normalised
+expression to 10,000 counts per cell. Which we already have in
+`adata.raw.X`, check by summing up the data, it should sum to 10K.
+
+```{python}
+#| label: from-raw
+adata = adata.raw.to_adata() 
+adata.X.expm1().sum(axis = 1)[:10]
+```
+
+```{python}
+#| label: celltypist
+predictions = celltypist.annotate(adata, model = 'Immune_All_High.pkl', majority_voting = True)
+
+predictions.predicted_labels
+```
+
+The first column `predicted_labels` is the predictions made for each
+individual cell, while `majority_voting` is done for local subclusters,
+the clustering identities are in column `over_clustering`.
+
+Now we convert the predictions to an anndata object.
+
+```{python}
+#| label: plot-celltypist
+adata = predictions.to_adata()
+
+sc.pl.umap(adata, color = ['leiden_0.6', 'predicted_labels', 'majority_voting'], legend_loc = 'on data')
+```
+
+<div>
+
+> **Task**
+>
+> Rerun predictions with Celltypist, but use another model, for instance
+> `Immune_All_High.pkl`, or any other model you find relevant, you can
+> find a list of models [here](https://www.celltypist.org/models). How
+> do the results differ for you?
+
+</div>
+
+### Celltypist custom model
+
+We can also train our own model on any reference data that we want to
+use. In this case we will use the pbmc data in `adata_ref` to train a
+model.
+
+Celltypist requires the data to be in the format of log1p normalised
+expression to 10,000 counts per cell, we can check if that is the case
+for the object we have:
+
+```{python}
+#| label: prep-refdata
+adata_ref.raw.X.expm1().sum(axis = 1)[:10]
+```
+
+These should all sum up to 10K, which is not the case, probably since
+some genes were removed after normalizing. Wo we will have to start from
+the raw counts of that dataset instead. Before we selected the data
+`pbmc3k_processed`, but now we will instead use `pbmc3k`.
+
+```{python}
+#| label: prep-refdata2
+adata_ref2 = sc.datasets.pbmc3k() 
+adata_ref2
+```
+
+This data is not annotated, so we will have to match the indices from
+the filtered and processed object. And add in the metadata with
+annotations.
+
+```{python}
+#| label: prep-refdata3
+adata_ref2 = adata_ref2[adata_ref.obs_names,:]
+adata_ref2.obs = adata_ref.obs
+adata_ref2
+```
+
+Now we can normalize the matrix:
+
+```{python}
+#| label: process-refdata
+sc.pp.normalize_total(adata_ref2, target_sum = 1e4)
+sc.pp.log1p(adata_ref2)
+
+# check the sums again
+adata_ref2.X.expm1().sum(axis = 1)[:10]
+```
+
+And finally train the model.
+
+```{python}
+#| label: celltypist-train
+new_model = celltypist.train(adata_ref2, labels = 'louvain', n_jobs = 10, feature_selection = True)
+```
+
+Now we can run predictions on our data
+
+```{python}
+#| label: celltypist-pred
+predictions2 = celltypist.annotate(adata, model = new_model, majority_voting = True)
+```
+
+Instead of converting the predictions to anndata we will just add
+another column in the `adata.obs` with these new predictions since the
+column names from the previous celltypist runs with clash.
+
+```{python}
+#| label: celltypist-save
+adata.obs["predicted_labels_ref"] = predictions2.predicted_labels["predicted_labels"]
+adata.obs["majority_voting_ref"] = predictions2.predicted_labels["majority_voting"]
+```
+
+```{python}
+#| label: celltypist-plot
+sc.pl.umap(adata, color = ['predicted_labels', 'majority_voting','predicted_labels_ref', 'majority_voting_ref'], legend_loc = 'on data', ncols=2)
+```
+
+## Compare results
+
+The predictions from ingest is stored in the column 'louvain' while we
+named the label transfer with scanorama as 'predicted'
+
+```{python}
+#| label: plot-all
+sc.pl.umap(adata, color=['louvain','label_trans','majority_voting', 'majority_voting_ref'], wspace=0.5, ncols=3)
+```
+
+As you can see, the main celltypes are generally the same, but there are
+clearly differences, especially with regards to the cells predicted as
+either ILC/NK/CD8 T-cells.
+
+The only way to make sure which method you trust is to look at what
+genes the different celltypes express and use your biological knowledge
+to make decisions.
+
+## Gene set analysis
+
+Another way of predicting celltypes is to use the differentially
+expressed genes per cluster and compare to lists of known cell marker
+genes. This requires a list of genes that you trust and that is relevant
+for the tissue you are working on.
+
+You can either run it with a marker list from the ontology or a list of
+your choice as in the example below.
+
+```{python}
+#| label: fetch-markers
+markers_url = urljoin(path_data, "misc/human_cell_markers.txt")
+markers_path = "data/human_cell_markers.txt"
+download_file(url=markers_url, destination_path=markers_path, auth=auth_credentials)
+```
+
+```{python}
+#| label: read-markers
+print("Loading data...")
+df = pd.read_table(markers_path)
+print(df.shape)
+```
+
+```{python}
+#| label: prep-markers
+# Filter for number of genes per celltype
+df['nG'] = df.geneSymbol.str.split(",").str.len()
+
+df = df[df['nG'] > 5]
+df = df[df['nG'] < 100]
+d = df[df['cancerType'] == "Normal"]
+print(df.shape)
+
+# convert to dict.
+df.index = df.cellName
+gene_dict = df.geneSymbol.str.split(",").to_dict()
+```
+
+```{python}
+#| label: dge
+# run differential expression per cluster
+sc.tl.rank_genes_groups(adata, 'leiden_0.6', method='wilcoxon', key_added = "wilcoxon")
+```
+
+```{python}
+#| label: gsea
+# do gene set overlap to the groups in the gene list and top 300 DEGs.
+
+import gseapy
+
+gsea_res = dict()
+pred = dict()
+
+for cl in adata.obs['leiden_0.6'].cat.categories:
+    print(f"Processing cluster: {cl}")
+
+    df_group = sc.get.rank_genes_groups_df(adata, group=cl, key='wilcoxon')
+
+    if df_group.empty:
+        pred[cl] = "Unass"
+        continue
+
+    glist = df_group['names'].squeeze().str.strip().tolist()
+    top_genes = glist[:300]
+
+    if not top_genes:
+        pred[cl] = "Unass"
+        continue
+
+    enr_res = gseapy.enrichr(
+        gene_list=top_genes,
+        organism='Human',
+        gene_sets=gene_dict,
+        background=adata.shape[1],
+        cutoff=1
+    )
+
+    results = enr_res.results
+
+    if isinstance(results, pd.DataFrame) and not results.empty:
+        # Sort by P-value, then Combined Score
+        results.sort_values(
+            by=["P-value", "Combined Score"], 
+            ascending=[True, False], 
+            inplace=True
+        )
+        gsea_res[cl] = enr_res
+
+        best_p_val = results["P-value"].iloc[0]
+        best_c_score = results["Combined Score"].iloc[0]
+
+        top_hits = results[
+            (results["P-value"] == best_p_val) & 
+            (results["Combined Score"] == best_c_score)
+        ]
+
+        # Concatenate top hits labels
+        pred[cl] = " / ".join(top_hits["Term"].tolist())
+        print(f"Assigned: {pred[cl]}")
+
+    else:
+        pred[cl] = "Unass"
+```
+
+```{python}
+#| label: gsea-res
+# prediction per cluster
+pred
+```
+
+```{python}
+#| label: plot-gsea
+prediction = [pred[x] for x in adata.obs['leiden_0.6']]
+adata.obs["GS_overlap_pred"] = prediction
+
+sc.pl.umap(adata, color='GS_overlap_pred')
+```
+
+<div>
+
+> **Discuss**
+>
+> As you can see, it agrees to some extent with the predictions from the
+> methods above, but there are clear differences, which do you think
+> looks better?
+
+</div>
+
+## Save data
+
+We can finally save the object for use in future steps.
+
+```{python}
+#| label: save
+adata.write_h5ad('data/covid/results/scanpy_covid_qc_dr_int_cl_ct-ctrl13.h5ad')
+```
+
+## Session info
+
+```{=html}
+<details>
+```
+```{=html}
+<summary>
+```
+Click here
+```{=html}
+</summary>
+```
+
+```{python}
+#| label: session
+sc.logging.print_versions()
+```
+
+```{=html}
+</details>
+```
+
