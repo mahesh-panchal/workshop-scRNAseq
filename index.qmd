@@ -6,7 +6,396 @@ title: "Single-Cell RNA-Seq Analysis Tutorial"
 
 This tutorial series covers single-cell RNA-seq analysis using Scanpy.
 
-### Tutorials
+## Understanding AnnData Structure
+
+All single-cell data in Scanpy is stored in an **AnnData** (Annotated Data) object. Understanding this structure is crucial for effective analysis.
+
+### Core Components
+
+::: {.panel-tabset}
+
+#### Overview
+
+```
+AnnData object with n_obs × n_vars
+    obs: Cell metadata (rows)
+    var: Gene metadata (columns)
+    X: Expression matrix (cells × genes)
+    uns: Unstructured annotations
+    obsm: Multi-dimensional cell annotations
+    varm: Multi-dimensional gene annotations
+    layers: Alternative expression matrices
+```
+
+#### X (Expression Matrix)
+
+**What**: The main data matrix
+
+- **Shape**: cells (rows) × genes (columns)
+- **Content**: Gene expression counts or normalized values
+- **Type**: Usually sparse matrix to save memory
+
+```python
+# Access expression matrix
+adata.X                    # All data
+adata.X[0:5, 0:10]        # First 5 cells, first 10 genes
+adata[:, 'CD3D'].X        # CD3D expression in all cells
+```
+
+**Important**: This gets **overwritten** during normalization!
+
+- Save raw counts first: `adata.raw = adata`
+
+#### obs (Cell Metadata)
+
+**What**: Per-cell annotations (DataFrame)
+
+- **Rows**: One per cell
+- **Columns**: Metadata variables
+
+**Typical contents**:
+```python
+adata.obs
+# Columns might include:
+# - sample: Sample ID
+# - n_genes_by_counts: Number of genes detected
+# - pct_counts_mt: % mitochondrial reads
+# - cell_type: Annotated cell type
+# - leiden: Cluster assignment
+# - phase: Cell cycle phase
+```
+
+**Adding new metadata**:
+```python
+adata.obs['new_column'] = values
+adata.obs['doublet'] = adata.obs['n_genes'] > 4000
+```
+
+#### var (Gene Metadata)
+
+**What**: Per-gene annotations (DataFrame)
+
+- **Rows**: One per gene
+- **Columns**: Gene attributes
+
+**Typical contents**:
+```python
+adata.var
+# Columns might include:
+# - gene_ids: Ensembl IDs
+# - highly_variable: Is this a HVG?
+# - mt: Is this mitochondrial?
+# - dispersions: Gene variability
+# - means: Mean expression
+```
+
+**Gene filtering**:
+```python
+# Keep only highly variable genes
+adata = adata[:, adata.var['highly_variable']]
+```
+
+#### uns (Unstructured)
+
+**What**: Catch-all dictionary for misc. data
+
+- **Type**: Python dictionary
+- **Content**: Anything that doesn't fit elsewhere
+
+**Typical contents**:
+```python
+adata.uns
+# - neighbors: Graph parameters
+# - pca: PCA variance explained
+# - rank_genes_groups: DEG results
+# - leiden_colors: Cluster colors for plots
+```
+
+**Accessing**:
+```python
+adata.uns['pca']['variance_ratio']
+adata.uns['rank_genes_groups']['names']
+```
+
+#### obsm (Cell Embeddings)
+
+**What**: Multi-dimensional **per-cell** arrays
+
+- **Used for**: Dimension reduction coordinates
+- **Shape**: n_cells × n_dimensions
+
+**Typical contents**:
+```python
+adata.obsm
+# - X_pca: PCA coordinates (cells × 50 PCs)
+# - X_umap: UMAP coordinates (cells × 2)
+# - X_tsne: t-SNE coordinates (cells × 2)
+# - X_draw_graph_fa: Force-directed layout
+```
+
+**Accessing**:
+```python
+# Get UMAP coordinates for all cells
+adata.obsm['X_umap']        # Shape: (n_cells, 2)
+adata.obsm['X_umap'][:, 0]  # UMAP dimension 1
+```
+
+**Why separate from obs?**
+
+- `obs`: Single values per cell (cell_type, sample)
+- `obsm`: Multiple values per cell (coordinates, embeddings)
+
+#### varm (Gene Embeddings)
+
+**What**: Multi-dimensional **per-gene** arrays
+
+- **Less commonly used** than obsm
+- **Shape**: n_genes × n_dimensions
+
+**Typical contents**:
+```python
+adata.varm
+# - PCs: Principal component loadings
+```
+
+#### layers
+
+**What**: Alternative expression matrices
+
+- **Same shape as X**: cells × genes
+- **Use**: Store different versions of data
+
+**Typical contents**:
+```python
+adata.layers
+# - counts: Raw counts
+# - log1p: Log-normalized
+# - scaled: Z-score scaled
+```
+
+**Why use layers?**
+
+- Keep multiple data versions simultaneously
+- X gets overwritten → preserve originals in layers
+
+```python
+# Save before normalizing
+adata.layers['counts'] = adata.X.copy()
+
+# After normalization, access original
+original_counts = adata.layers['counts']
+```
+
+:::
+
+### Data Flow Through Analysis
+
+::: {.callout-note}
+## How AnnData Changes During Analysis
+
+**Starting point** (after reading data):
+```python
+adata
+# X: Raw UMI counts
+# obs: Just barcodes
+# var: Just gene names
+```
+
+**After QC**:
+```python
+adata
+# X: Still raw counts (filtered)
+# obs: n_genes, pct_counts_mt, doublet_score, ...
+# var: mt, ribo, highly_variable, ...
+# Cells and genes have been filtered
+```
+
+**After normalization**:
+```python
+adata
+# X: Log-normalized values (MODIFIED!)
+# raw: Backup of filtered raw counts
+# layers: Can store both versions
+```
+
+**After dimensionality reduction**:
+```python
+adata
+# obsm['X_pca']: PCA coordinates
+# obsm['X_umap']: UMAP coordinates
+# uns['pca']: Variance explained
+# varm['PCs']: PC loadings
+```
+
+**After clustering**:
+```python
+adata
+# obs['leiden']: Cluster labels
+# uns['leiden_colors']: Plot colors
+```
+
+**After DGE analysis**:
+```python
+adata
+# uns['rank_genes_groups']: All DEG results
+#   - names: Gene names
+#   - scores: Test statistics
+#   - pvals_adj: Adjusted p-values
+#   - logfoldchanges: Effect sizes
+```
+
+**After annotation**:
+```python
+adata
+# obs['cell_type']: Manual annotations
+# obs['predicted_labels']: Automated predictions
+# obs['prediction_score']: Confidence scores
+```
+:::
+
+### Common Operations
+
+::: {.panel-tabset}
+
+#### Subsetting
+
+```python
+# By cells
+covid_cells = adata[adata.obs['type'] == 'Covid', :]
+first_100 = adata[0:100, :]
+
+# By genes
+hvg_only = adata[:, adata.var['highly_variable']]
+specific_genes = adata[:, ['CD3D', 'CD8A', 'CD4']]
+
+# By both
+subset = adata[adata.obs['leiden'] == '0', adata.var['highly_variable']]
+```
+
+#### Accessing Data
+
+```python
+# Expression values
+adata.X                           # Whole matrix
+adata[:, 'CD3D'].X               # One gene, all cells
+adata[adata.obs['leiden']=='0', 'CD3D'].X  # One gene, one cluster
+
+# Metadata
+adata.obs['cell_type']           # All cell types
+adata.var['highly_variable']     # HVG boolean
+adata.obs.loc['CELL_ID', 'leiden']  # Specific cell's cluster
+
+# Embeddings
+adata.obsm['X_umap']             # UMAP coordinates
+adata.obsm['X_pca'][:, 0:10]    # First 10 PCs
+```
+
+#### Saving & Loading
+
+```python
+# Save entire object
+adata.write('results/analyzed.h5ad')
+
+# Load
+import scanpy as sc
+adata = sc.read_h5ad('results/analyzed.h5ad')
+
+# Save subsets
+adata[adata.obs['cell_type']=='T cells'].write('tcells_only.h5ad')
+```
+
+:::
+
+### Visual Guide
+
+```
+┌─────────────────────────────────────────────────┐
+│                  AnnData Object                 │
+├─────────────────────────────────────────────────┤
+│                                                 │
+│  X: [n_cells × n_genes] Expression Matrix      │
+│     ┌─────────────────────────────┐            │
+│     │ Gene1  Gene2  Gene3  ...    │            │
+│     ├─────────────────────────────┤            │
+│  C1 │  5      0      12    ...    │            │
+│  C2 │  0      3      8     ...    │            │
+│  C3 │  15     1      0     ...    │            │
+│     └─────────────────────────────┘            │
+│                                                 │
+├─────────────────────────────────────────────────┤
+│  obs: Cell metadata (DataFrame)                │
+│     sample  | n_genes | pct_mt | cell_type    │
+│     covid_1 | 2500    | 3.2    | T cell       │
+│     covid_1 | 1800    | 5.1    | B cell       │
+│     ...                                        │
+├─────────────────────────────────────────────────┤
+│  var: Gene metadata (DataFrame)                │
+│     highly_variable | mt   | mean_counts      │
+│     True           | False | 5.2              │
+│     False          | True  | 120.5            │
+│     ...                                        │
+├─────────────────────────────────────────────────┤
+│  obsm: Cell embeddings (arrays)                │
+│     X_pca:  [n_cells × 50]                     │
+│     X_umap: [n_cells × 2]                      │
+├─────────────────────────────────────────────────┤
+│  uns: Unstructured (dict)                      │
+│     pca: {variance_ratio: [...]}               │
+│     rank_genes_groups: {names: [...]}          │
+└─────────────────────────────────────────────────┘
+```
+
+### Key Concepts
+
+::: {.callout-important}
+## Critical Things to Remember
+
+1. **`.X` gets overwritten** during normalization
+   - Always save raw: `adata.raw = adata` BEFORE normalizing
+   - Or use layers: `adata.layers['counts'] = adata.X.copy()`
+
+2. **Filtering changes dimensions**
+   - Removing cells: `adata.n_obs` decreases
+   - Removing genes: `adata.n_vars` decreases
+   - All components (.obs, .var, .X) stay aligned
+
+3. **View vs Copy**
+   ```python
+   subset = adata[adata.obs['leiden']=='0']  # View (points to original)
+   subset = adata[adata.obs['leiden']=='0'].copy()  # Copy (independent)
+   ```
+
+4. **Sparse matrices save memory**
+   - `adata.X` is often sparse (most values are 0)
+   - Convert to dense: `adata.X.toarray()`
+   - Use `.A` or `.A1` for calculations: `adata.X.sum(axis=1).A1`
+
+5. **Indexing order matters**
+   - `adata[cells, genes]` not `adata[genes, cells]`
+   - `:` means "all" → `adata[:, genes]` = all cells, specific genes
+:::
+
+### Quick Reference
+
+| **What you want** | **How to access it** |
+|-------------------|----------------------|
+| Expression matrix | `adata.X` |
+| Raw counts (after norm) | `adata.raw.X` |
+| Cell barcodes | `adata.obs_names` |
+| Gene names | `adata.var_names` |
+| Sample labels | `adata.obs['sample']` |
+| Cluster assignments | `adata.obs['leiden']` |
+| UMAP coordinates | `adata.obsm['X_umap']` |
+| Highly variable genes | `adata.var['highly_variable']` |
+| DEG results | `adata.uns['rank_genes_groups']` |
+| Number of cells | `adata.n_obs` |
+| Number of genes | `adata.n_vars` |
+| Expression of gene X | `adata[:, 'GENE'].X` |
+| All T cells | `adata[adata.obs['cell_type']=='T cells']` |
+
+---
+
+## Tutorials
 
 1. [Quality Control](notebooks/quarto_annotated/scanpy_01_qc.qmd)
 2. [Dimensionality Reduction](notebooks/quarto_annotated/scanpy_02_dimred.qmd)
@@ -16,9 +405,42 @@ This tutorial series covers single-cell RNA-seq analysis using Scanpy.
 6. [Cell Type Prediction](notebooks/quarto_annotated/scanpy_06_celltyping.qmd)
 7. [Trajectory Inference (PAGA)](notebooks/quarto_annotated/scanpy_07_trajectory.qmd)
 
-### Setup
+---
+
+## Setup
+
+### Installation
 
 ```bash
+# Install all dependencies
 pixi install
-pixi run python -m ipykernel install --user --name scanpy
 ```
+
+### Running the Tutorials
+
+```bash
+# Render all notebooks with Quarto
+pixi run quarto render
+
+# Preview the rendered site
+pixi run quarto preview
+```
+
+### Prerequisites
+
+- Basic Python knowledge
+- Understanding of single-cell RNA-seq concepts
+- Familiarity with the command line
+
+---
+
+## Resources
+
+::: {.callout-tip}
+## Additional Learning
+
+- [Scanpy Documentation](https://scanpy.readthedocs.io/)
+- [AnnData Documentation](https://anndata.readthedocs.io/)
+- [Single-cell best practices book](https://www.sc-best-practices.org/)
+- [Scanpy tutorials](https://scanpy-tutorials.readthedocs.io/)
+:::
