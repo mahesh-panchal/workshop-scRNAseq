@@ -1,0 +1,24 @@
+---
+title: "Single-Cell RNA-Seq Analysis Tutorial"
+---
+
+## Welcome
+
+This tutorial series covers single-cell RNA-seq analysis using Scanpy.
+
+### Tutorials
+
+1. [Quality Control](notebooks/quarto_annotated/scanpy_01_qc.qmd)
+2. [Dimensionality Reduction](notebooks/quarto_annotated/scanpy_02_dimred.qmd)
+3. [Data Integration](notebooks/quarto_annotated/scanpy_03_integration.qmd)
+4. [Clustering](notebooks/quarto_annotated/scanpy_04_clustering.qmd)
+5. [Differential Gene Expression](notebooks/quarto_annotated/scanpy_05_dge.qmd)
+6. [Cell Type Prediction](notebooks/quarto_annotated/scanpy_06_celltyping.qmd)
+7. [Trajectory Inference (PAGA)](notebooks/quarto_annotated/scanpy_07_trajectory.qmd)
+
+### Setup
+
+```bash
+pixi install
+pixi run python -m ipykernel install --user --name scanpy
+```

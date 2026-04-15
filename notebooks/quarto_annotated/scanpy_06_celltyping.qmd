@@ -2,11 +2,6 @@
 description: Assignment of cell identities based on gene expression patterns using reference data.
 subtitle: Scanpy Toolkit
 title: Celltype prediction
-jupyter:
-  kernelspec:
-    display_name: scanpy
-    language: python
-    name: scanpy
 ---
 
 ::::callout-note

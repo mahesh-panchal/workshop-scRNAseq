@@ -2,11 +2,6 @@
 description: Quality control of single cell RNA-Seq data. Inspection of QC metrics including number of UMIs, number of genes expressed, mitochondrial and ribosomal expression, sex and cell cycle state.
 subtitle: Scanpy Toolkit
 title: Quality Control
-jupyter:
-  kernelspec:
-    display_name: scanpy
-    language: python
-    name: scanpy
 ---
 
 ::::callout-note

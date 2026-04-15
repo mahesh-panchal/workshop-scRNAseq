@@ -2,11 +2,6 @@
 description: Reconstructing developmental or differentiation pathways from individual cell gene expression profiles to understand cellular transitions and relationships.
 subtitle: Scanpy Toolkit
 title: Trajectory inference using PAGA
-jupyter:
-  kernelspec:
-    display_name: scanpy
-    language: python
-    name: scanpy
 ---
 
 ::::callout-note

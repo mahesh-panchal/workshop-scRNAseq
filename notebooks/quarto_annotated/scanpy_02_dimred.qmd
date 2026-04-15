@@ -2,11 +2,6 @@
 description: Reduce high-dimensional gene expression data from individual cells into a lower-dimensional space for visualization. This lab explores PCA, tSNE and UMAP.
 subtitle: Scanpy Toolkit
 title: Dimensionality Reduction
-jupyter:
-  kernelspec:
-    display_name: scanpy
-    language: python
-    name: scanpy
 ---
 
 ::::callout-note

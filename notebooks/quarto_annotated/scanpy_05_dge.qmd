@@ -2,11 +2,6 @@
 description: Identify genes that are significantly over or under-expressed between conditions in specific cell populations.
 subtitle: Scanpy Toolkit
 title: Differential gene expression
-jupyter:
-  kernelspec:
-    display_name: scanpy
-    language: python
-    name: scanpy
 ---
 
 ::::callout-note

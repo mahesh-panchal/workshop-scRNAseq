@@ -2,11 +2,6 @@
 description: Combining and harmonizing samples or datasets from different batches such as experiments or conditions to enable meaningful cross-sample comparisons.
 subtitle: Scanpy Toolkit
 title: Data Integration
-jupyter:
-  kernelspec:
-    display_name: scanpy
-    language: python
-    name: scanpy
 ---
 
 ::::callout-note

@@ -2,11 +2,6 @@
 description: Grouping individual cells with similar gene expression profiles to uncover distinct cell populations and their functional characteristics.
 subtitle: Scanpy Toolkit
 title: Clustering
-jupyter:
-  kernelspec:
-    display_name: scanpy
-    language: python
-    name: scanpy
 ---
 
 ::::callout-note

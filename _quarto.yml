@@ -1,0 +1,52 @@
+project:
+  type: website
+  output-dir: _output
+  render:
+    - index.qmd
+    - notebooks/quarto_annotated/
+
+website:
+  title: "Single-Cell RNA-Seq Analysis with Scanpy"
+  navbar:
+    left:
+      - text: "Home"
+        href: index.qmd
+      - text: "Tutorials"
+        menu:
+          - text: "Quality Control"
+            href: notebooks/quarto_annotated/scanpy_01_qc.qmd
+          - text: "Dimensionality Reduction"
+            href: notebooks/quarto_annotated/scanpy_02_dimred.qmd
+          - text: "Data Integration"
+            href: notebooks/quarto_annotated/scanpy_03_integration.qmd
+          - text: "Clustering"
+            href: notebooks/quarto_annotated/scanpy_04_clustering.qmd
+          - text: "Differential Expression"
+            href: notebooks/quarto_annotated/scanpy_05_dge.qmd
+          - text: "Cell Type Prediction"
+            href: notebooks/quarto_annotated/scanpy_06_celltyping.qmd
+          - text: "Trajectory Inference"
+            href: notebooks/quarto_annotated/scanpy_07_trajectory.qmd
+
+# Quarto caching configuration
+execute:
+  freeze: auto  # Only re-execute when source changes
+  keep-ipynb: false  # Don't keep intermediate .ipynb files
+  
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    code-overflow: wrap
+    fig-width: 8
+    fig-height: 6
+
+# Jupyter configuration
+jupyter:
+  kernelspec:
+    display_name: scanpy
+    language: python
+    name: scanpy
