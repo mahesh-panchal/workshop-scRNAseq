@@ -257,6 +257,69 @@ Now we can plot some of the QC variables as violin plots.
 sc.pl.violin(adata, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt', 'pct_counts_ribo', 'pct_counts_hb'], jitter=0.4, groupby = 'sample', rotation= 45)
 ```
 
+::: {.callout-tip}
+## What to Look For in QC Violin Plots
+
+### **GOOD Quality Indicators** ✅
+
+**n_genes_by_counts**:
+- Main distribution: 500-3000 genes per cell
+- Shape: Single peak (unimodal)
+- Consistent across samples
+
+**total_counts**:
+- Main distribution: 1000-10000 UMIs per cell
+- Similar median across samples
+- No extreme outliers
+
+**pct_counts_mt**:
+- Most cells: <5-10%
+- Acceptable: <20%
+- Shape: Single peak near low values
+
+**pct_counts_ribo**:
+- Typical range: 10-40%
+- Variable across cell types (expected)
+- No cells near 0%
+
+**pct_counts_hb**:
+- Should be very low (<1%) in PBMCs
+- High values = red blood cell contamination
+
+---
+
+### **BAD Quality / Artifacts** 🚩
+
+**n_genes_by_counts**:
+- 🚩 Bimodal distribution = two cell populations (good + poor quality)
+- 🚩 Very low (<200 genes) = empty droplets or broken cells
+- 🚩 Very high (>6000 genes) = potential doublets
+- 🚩 Large differences between samples = batch effects or quality issues
+
+**total_counts**:
+- 🚩 Very low counts = poor library quality or cell damage
+- 🚩 Extreme outliers (>50,000) = possible doublets
+
+**pct_counts_mt**:
+- 🚩 Bimodal with high peak (>20%) = many dying/stressed cells
+- 🚩 Long tail to 50-100% = severe cell damage
+- 🚩 **covid_15 and covid_16 in this dataset show this pattern**
+
+**pct_counts_ribo**:
+- 🚩 Many cells near 0% = poor RNA quality
+- 🚩 All cells >60% = unusual, check for artifacts
+
+**pct_counts_hb**:
+- 🚩 >5% in any cells = red blood cell contamination
+- 🚩 Entire samples high = poor PBMC isolation
+
+---
+
+### **In This Dataset**:
+- covid_15 and covid_16 have **lower gene detection** and **higher MT%** = lower quality samples
+- These samples will lose more cells during filtering
+:::
+
 ::: {.callout-important}
 ## Discuss
 
@@ -275,6 +338,57 @@ also plot the different QC measures as scatter plots.
 #| fig-width: 5
 sc.pl.scatter(adata, x='total_counts', y='pct_counts_mt', color="sample")
 ```
+
+::: {.callout-tip}
+## What to Look For in QC Scatter Plots
+
+### **Expected Pattern (Good Quality)** ✅
+
+**total_counts vs pct_counts_mt**:
+- Most cells cluster in **bottom-right**: high counts, low MT%
+- Slight negative correlation: cells with very high counts may have slightly lower MT%
+- Clear "cloud" of good quality cells
+
+---
+
+### **Artifact Patterns** 🚩
+
+**"Hockey stick" or "L-shape"**:
+- Horizontal line of cells: **low counts across all MT% values** = poor quality/empty droplets
+- Vertical line of cells: **high MT% across all count levels** = dying cells
+
+**"Two clouds"**:
+- Distinct populations = mixture of good and poor quality
+- High MT% cloud should be filtered out
+
+**Extreme outliers**:
+- Very high counts + high MT% = doublets that are also damaged
+- Very high counts + low MT% = potential doublets (check later)
+
+**Strong negative correlation**:
+- As counts increase, MT% decreases dramatically = computational artifact or normalization issue
+
+---
+
+### **Other Useful Scatter Plots to Check**:
+
+```python
+# Doublet detection
+sc.pl.scatter(adata, x='total_counts', y='n_genes_by_counts', color="sample")
+# Expected: Linear relationship (more counts = more genes)
+# 🚩 Cells far above the line = potential doublets
+
+# RNA quality
+sc.pl.scatter(adata, x='n_genes_by_counts', y='pct_counts_mt', color="sample")
+# Expected: Negative correlation (fewer genes = higher MT%)
+# 🚩 High genes + high MT% = unusual, investigate
+
+# Ribosomal vs mitochondrial
+sc.pl.scatter(adata, x='pct_counts_ribo', y='pct_counts_mt', color="sample")
+# Expected: Inverse relationship
+# 🚩 Low ribo + high MT% = damaged cells
+```
+:::
 
 ::: {.callout-important}
 ## Discuss
@@ -355,6 +469,62 @@ reads. We can for instance plot the percentage of counts per gene.
 sc.pl.highest_expr_genes(adata, n_top=20)
 ```
 
+::: {.callout-tip}
+## What to Look For in Top Expressed Genes Plot
+
+### **Expected Pattern (Typical scRNA-seq)** ✅
+
+**Top genes usually include:**
+- **Ribosomal proteins** (RPL/RPS genes): 20-40% combined - normal
+- **Mitochondrial genes** (MT-): 5-15% combined - acceptable
+- **Highly abundant housekeeping genes**: ACTB, GAPDH, B2M
+- **Tissue-specific abundant genes**: 
+  - PBMCs: Hemoglobin genes (if some RBC contamination)
+  - Brain: Synaptic genes
+  - Liver: Albumin
+
+**What this tells you:**
+- These genes dominate the data and will influence normalization
+- Expected for the tissue type = good
+- Dominated by housekeeping = normal
+
+---
+
+### **Problematic Patterns** 🚩
+
+**MALAT1 dominance (like in this dataset)**:
+- 🚩 >30% of UMIs in single cells = technical artifact
+- Nuclear lncRNA retained in damaged cells
+- Often correlates with high MT% = quality issue
+- **Action**: Remove MALAT1 from dataset or filter these cells
+
+**Mitochondrial gene dominance**:
+- 🚩 MT genes are 5 of top 10 = many low-quality cells remain
+- 🚩 Any single MT gene >10% = severe contamination
+- **Action**: More stringent MT% filtering needed
+
+**Hemoglobin dominance in PBMCs**:
+- 🚩 HBA1, HBA2, HBB in top 10 = RBC contamination
+- **Action**: Remove HB genes from analysis
+
+**Ribosomal dominance**:
+- 🚩 >50% ribosomal = unusual but can be biological
+- Some cell types (plasma cells) naturally have extreme ribosomal content
+- Check if specific to certain clusters later
+
+**No tissue-specific markers**:
+- 🚩 Only housekeeping in top 20 = poor RNA capture or wrong tissue
+- **Action**: Check experimental protocol
+
+---
+
+### **In This Dataset**:
+- MALAT1 is #1 (up to 30%) = will be removed
+- Multiple MT genes in top 20 = filtering needed
+- Ribosomal genes abundant = normal
+- This pattern justifies the removal of MALAT1, MT, and HB genes
+:::
+
 As you can see, MALAT1 constitutes up to 30% of the UMIs from a single
 cell and the other top genes are mitochondrial and ribosomal genes. It
 is quite common that nuclear lincRNAs have correlation with quality and
@@ -424,6 +594,56 @@ Let's plot the same QC stats once more.
 #| label: qc-vln2
 sc.pl.violin(adata, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt','pct_counts_ribo', 'pct_counts_hb'], jitter=0.4, groupby = 'sample', rotation = 45)
 ```
+
+::: {.callout-tip}
+## What to Look For After Filtering
+
+### **Successful Filtering** ✅
+
+**Compared to pre-filtering plots:**
+- **n_genes_by_counts**: 
+  - ✅ Low tail removed (no cells <200 genes)
+  - ✅ More uniform distribution
+  - ✅ Outliers reduced
+
+- **pct_counts_mt**:
+  - ✅ All samples now <20% (our cutoff)
+  - ✅ High MT tail completely removed
+  - ✅ Tighter distributions
+
+- **pct_counts_ribo**:
+  - ✅ All samples >5% (our cutoff)
+  - ✅ Still variable (expected - biological)
+
+- **Sample sizes**:
+  - ✅ Some samples lost more cells (covid_15, covid_16) = expected from initial QC
+  - ✅ Most samples retained majority of cells = good
+
+---
+
+### **Potential Issues After Filtering** 🚩
+
+**Over-filtering**:
+- 🚩 Lost >70% of cells from all samples = thresholds too strict
+- 🚩 Some samples have <100 cells = insufficient for analysis
+- **Action**: Relax filtering thresholds
+
+**Under-filtering**:
+- 🚩 Still see bimodal distributions = need stricter cutoffs
+- 🚩 Still have long high-MT tail = lower MT% threshold
+- 🚩 Still see extreme outliers = add max thresholds
+
+**Batch effects amplified**:
+- 🚩 Samples now have very different distributions = inconsistent quality
+- May need sample-specific filtering or remove low-quality samples entirely
+
+---
+
+### **In This Dataset**:
+- Filtering was successful
+- Still variation in pct_counts_mt = will need to address in normalization (regression or removal)
+- pct_counts_ribo variation is biological (different cell types) = keep as is
+:::
 
 There is still quite a lot of variation in `percent_mito`, so it will
 have to be dealt with in the data analysis step. The `percent_ribo`
@@ -548,6 +768,55 @@ adata.obs["XIST-counts"] = adata.X[:,adata.var_names.str.match('XIST')].toarray(
 
 sc.pl.scatter(adata, x='XIST-counts', y='percent_chrY', color="sample")
 ```
+
+::: {.callout-tip}
+## What to Look For in Sex Determination Plots
+
+### **Clear Sex Separation** ✅
+
+**Expected pattern:**
+- **Two distinct clusters** in XIST vs chrY% plot
+- **Bottom-right cluster**: High XIST, low/zero chrY% = **Females** (XX)
+- **Top-left cluster**: Low/zero XIST, high chrY% = **Males** (XY)
+- **Clear separation** = good quality, unambiguous sex calls
+
+**In violin plots:**
+- Some samples high XIST, low chrY% = female samples
+- Some samples low XIST, high chrY% = male samples
+- Within-sample consistency = all cells from same donor have same sex
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Intermediate cells**:
+- 🚩 Cells between clusters (moderate XIST + moderate chrY%) = potential doublets (male + female cells)
+- **Action**: Check if these are flagged as doublets
+
+**Cells with neither signal**:
+- 🚩 Low XIST AND low chrY% = possible low-quality cells or certain cell types with low expression
+- Often in bottom-left corner = check quality metrics for these cells
+
+**Mixed within sample**:
+- 🚩 One sample has cells in both male and female clusters = sample mislabeling or contamination
+- **Action**: Investigate sample provenance
+
+**No separation**:
+- 🚩 All cells have low signal for both = poor RNA quality or wrong species annotations
+- **Action**: Check that you're using human genes
+
+**Gradients instead of clusters**:
+- 🚩 Continuous rather than discrete pattern = doublets or technical artifacts
+
+---
+
+### **In This Dataset**:
+Looking at the plots:
+- **Males**: covid_1, covid_17, ctrl_5 (high chrY%, low XIST)
+- **Females**: covid_15, covid_16, ctrl_13, ctrl_14, ctrl_19 (high XIST, low chrY%)
+- Clear separation = good quality
+- 3 males, 5 females = **sex imbalance** in study design
+:::
 
 Plot as violins.
 
@@ -678,6 +947,45 @@ We can now create a violin plot for the cell cycle scores as well.
 sc.pl.violin(adata, ['S_score', 'G2M_score'], jitter=0.4, groupby = 'sample', rotation=45)
 ```
 
+::: {.callout-tip}
+## What to Look For in Cell Cycle Plots
+
+### **Expected Patterns** ✅
+
+**Most cells in G1 (quiescent)**:
+- S_score ≈ 0, G2M_score ≈ 0
+- Expected for most tissues (especially PBMCs)
+- Cycling cells are minority
+
+**Small population of cycling cells**:
+- Clear enrichment in some samples
+- S_score > 0 or G2M_score > 0
+- Makes biological sense (e.g., activated immune cells)
+
+---
+
+### **Problematic/Unexpected Patterns** 🚩
+
+**All cells highly cycling**:
+- 🚩 All cells have high scores = likely artifact or cancer cell lines
+- PBMCs shouldn't be mostly cycling
+
+**Negative scores everywhere**:
+- 🚩 Might indicate poor expression of cell cycle genes
+- Check if cell cycle genes are present in dataset
+
+**One sample dramatically different**:
+- 🚩 One sample has many cycling cells, others don't = biological difference or technical artifact
+- Could be real (e.g., one sample stimulated)
+
+---
+
+### **In This Dataset**:
+- Most cells have scores near 0 = mostly quiescent (G1 phase)
+- Few cycling cells = expected for PBMCs
+- Similar across samples = consistent
+:::
+
 In this case it looks like we only have a few cycling cells in these
 datasets.
 
@@ -693,6 +1001,45 @@ suggest that you look at the scores.
 
 sc.pl.scatter(adata, x='S_score', y='G2M_score', color="phase")
 ```
+
+::: {.callout-tip}
+## Interpreting Cell Cycle Phase Predictions
+
+### **Expected Pattern** ✅
+
+**Four populations:**
+1. **Bottom-left (S=0, G2M=0)**: G1 phase - majority of cells
+2. **Right side (S>0, G2M≈0)**: S phase - DNA replication
+3. **Top (S≈0, G2M>0)**: G2M phase - preparing to divide
+4. **Top-right (S>0, G2M>0)**: Transition S→G2M
+
+**Trajectory**: G1 → S → G2M → (division) → G1
+
+---
+
+### **Issues to Watch For** 🚩
+
+**Scanpy's automatic phase assignment**:
+- Uses cutoff of 0 for both scores
+- 🚩 **Often doesn't fit data well** (as in this dataset)
+- Many "S" or "G2M" cells are actually G1 with scores barely >0
+- **Recommendation**: Use continuous scores, not discrete phases
+
+**No clear populations**:
+- 🚩 Scores form cloud without structure = cell cycle genes not informative
+- May need different reference gene list
+
+**All cells in one quadrant**:
+- 🚩 Problem with scoring or gene expression
+
+---
+
+### **In This Dataset**:
+- Most cells near (0,0) = G1/quiescent
+- Very few clearly cycling cells
+- Automatic "phase" predictions show many "S" cells, but scores show they're barely above 0
+- **Use scores, ignore phase labels**
+:::
 
 ## Predict doublets
 
@@ -766,7 +1113,7 @@ scrub_pred = pd.concat(alldata.values())
 adata.obs['doublet_scores'] = scrub_pred['doublet_score'] 
 adata.obs['predicted_doublets'] = scrub_pred['predicted_doublets'] 
 
-sum(adata.obs['predicted_doublets'])
+adata.obs['predicted_doublets'].sum()
 ```
 
 We should expect that two cells have more detected genes than a single
@@ -784,6 +1131,53 @@ in general.
 adata.obs['doublet_info'] = adata.obs["predicted_doublets"].astype(str)
 sc.pl.violin(adata, 'n_genes_by_counts', jitter=0.4, groupby = 'doublet_info', rotation=45)
 ```
+
+::: {.callout-tip}
+## What to Look For in Doublet Predictions
+
+### **Good Doublet Detection** ✅
+
+**Doublets have higher gene counts:**
+- Doublet distribution shifted right compared to singlets
+- Median doublet genes ≈ 1.5-2× singlet genes
+- Makes biological sense (2 cells = 2× RNA)
+
+**Separation between groups:**
+- Clear difference in distributions
+- Some overlap expected (large singlets vs. small doublets)
+
+**Reasonable doublet rate:**
+- 2-8% of cells flagged (depends on loading)
+- Matches expected rate from 10x specs
+
+---
+
+### **Problematic Patterns** 🚩
+
+**No difference in distributions**:
+- 🚩 Doublets and singlets have same gene counts = poor prediction
+- Algorithm may have failed
+- **Action**: Adjust parameters or try different method
+
+**Too many doublets predicted**:
+- 🚩 >15% flagged = over-prediction or severely overloaded
+- **Action**: Check expected rate, adjust threshold
+
+**Too few doublets**:
+- 🚩 <1% flagged in high-load experiment = under-prediction
+- **Action**: Lower threshold
+
+**Doublets have LOWER gene counts**:
+- 🚩 Completely wrong = algorithm error
+- **Action**: Re-run or use different method
+
+---
+
+### **In This Dataset**:
+- Doublets have clearly higher n_genes = good prediction
+- ~4% predicted doublets = matches expected rate for 10x
+- Validation successful ✅
+:::
 
 Now, let's run PCA and UMAP and plot doublet scores onto UMAP to check
 the doublet predictions. We will go through these steps in more detail
@@ -815,6 +1209,60 @@ sc.tl.umap(adata, random_state=331)
 sc.pl.umap(adata, color=['doublet_scores','doublet_info','sample'])
 ```
 
+::: {.callout-tip}
+## What to Look For in Doublet UMAP Visualization
+
+### **Expected Pattern (Good Detection)** ✅
+
+**Doublet score distribution:**
+- **Low scores (blue)**: Form distinct cell type clusters
+- **High scores (yellow/red)**: Often **between** or **bridging** cell type clusters
+- Makes sense: doublets are "hybrid" of two cell types
+
+**Predicted doublets location:**
+- Scattered throughout, not forming their own cluster
+- Often in "intermediate" spaces between major populations
+- Some may be in existing clusters (same-type doublets)
+
+**Per-sample view:**
+- Doublets present across all samples
+- Not concentrated in one sample (would suggest batch effect)
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Doublets form their own cluster**:
+- 🚩 All high-score cells in one distinct cluster = may be a real rare cell type
+- **Action**: Check marker genes for this cluster
+
+**One cluster entirely high scores**:
+- 🚩 Entire biological cluster flagged = over-prediction or unusual cell type
+- Large/complex cells naturally have more genes
+- **Action**: Check biological literature for this cell type
+
+**Doublets only in one sample**:
+- 🚩 Technical batch effect, not real doublets
+- **Action**: Check sample processing
+
+**No pattern**:
+- 🚩 Doublet scores random across UMAP = poor prediction
+- **Action**: Re-run with different parameters
+
+**All cells have similar scores**:
+- 🚩 No discrimination = algorithm didn't work
+- **Action**: Troubleshoot or try different method
+
+---
+
+### **In This Dataset**:
+- Predicted doublets scattered across UMAP = good
+- Some bridging between clusters = expected
+- Scores gradient from blue (low) to yellow (high) = working correctly
+- Present in all samples = not batch effect
+- **Doublet detection successful** ✅
+:::
+
 Now, let's remove all predicted doublets from our data.
 
 ```{python}
@@ -840,6 +1288,68 @@ adata.obs["sample"].value_counts()
 
 - Why is it important to predict doublets in the different samples separately? 
 - In which situations would this be more/less important?
+:::
+
+## Summary: Complete QC Workflow Checklist
+
+::: {.callout-note collapse="true"}
+## Expand for Full QC Checklist
+
+### **1. Initial Data Loading** ✅ / 🚩
+- [ ] All samples loaded successfully
+- [ ] Sample sizes reasonable (>100 cells)
+- [ ] Gene names unique
+
+### **2. QC Metric Calculation** ✅ / 🚩
+- [ ] MT genes detected (should be ~13 genes)
+- [ ] Ribosomal genes detected (should be ~80 genes)
+- [ ] Metrics calculated for all cells
+
+### **3. Pre-filtering QC Plots** ✅ / 🚩
+**Violin plots:**
+- [ ] Clear quality differences between samples visible
+- [ ] Can identify cutoff thresholds
+
+**Scatter plots:**
+- [ ] Correlations make biological sense
+- [ ] Outliers identified
+
+**Top genes:**
+- [ ] Dominated by expected gene types for tissue
+- [ ] MALAT1/MT genes flagged for removal
+
+### **4. Filtering** ✅ / 🚩
+- [ ] Removed low-quality cells (high MT%, low genes)
+- [ ] Removed likely empty droplets (very low counts)
+- [ ] Retained sufficient cells per sample (>100)
+- [ ] Not over-filtered (>50% cells retained if possible)
+
+### **5. Post-filtering QC** ✅ / 🚩
+- [ ] Distributions improved/tightened
+- [ ] Extreme outliers removed
+- [ ] Samples still have reasonable cell numbers
+
+### **6. Sex Check** ✅ / 🚩
+- [ ] Clear male/female separation
+- [ ] Matches expected sample metadata
+- [ ] No mixed-sex samples (contamination flag)
+
+### **7. Cell Cycle** ✅ / 🚩
+- [ ] Scores calculated
+- [ ] Biological pattern (mostly quiescent for PBMCs)
+- [ ] Use scores, not automatic phase calls
+
+### **8. Doublet Detection** ✅ / 🚩
+- [ ] Doublets have higher gene counts
+- [ ] Reasonable percentage flagged (2-8%)
+- [ ] Doublets located between clusters on UMAP
+- [ ] Present across all samples
+
+### **9. Final Data** ✅ / 🚩
+- [ ] Filtered data saved
+- [ ] Cell numbers per sample documented
+- [ ] Ready for normalization and downstream analysis
+
 :::
 
 ## Save data
