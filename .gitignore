@@ -27,3 +27,6 @@
 /compiled/labs/index.html
 _freeze/
 _site/
+# pixi environments
+.pixi/*
+!.pixi/config.toml
