@@ -27,18 +27,21 @@ We will also cover controlling batch effect in your test.
 **Two main applications in single-cell:**
 
 **1. Finding marker genes (cluster biomarkers):**
+
 - **Question**: What genes define each cell type?
 - **Comparison**: Each cluster vs. all other cells
 - **Example**: CD3E is a marker for T cells because it's highly expressed in T cell clusters but not in B cells or monocytes
 - **Use**: Cell type annotation, validation, understanding cell identity
 
 **2. Finding condition-responsive genes:**
+
 - **Question**: How does disease (COVID-19) change gene expression within a specific cell type?
 - **Comparison**: Same cell type between conditions (COVID vs. control)
 - **Example**: Interferon-stimulated genes upregulated in COVID-19 monocytes
 - **Use**: Understanding disease mechanisms, identifying therapeutic targets
 
 **Why DGE matters:**
+
 - Reveals which genes drive cell identity
 - Identifies disease signatures
 - Discovers biomarkers for diagnosis
@@ -122,11 +125,13 @@ log-transformed.
 **DGE should be performed on normalized, log-transformed counts for ALL genes, not just highly variable genes.** Here's why:
 
 **Why all genes?**
+
 - HVG selection was optimized for clustering (identifying cell types)
 - Many important marker genes or disease-response genes may not be highly variable across all cell types
 - Example: A gene expressed only in cluster 5 might not be "variable" across the whole dataset, but it's a perfect marker for that cluster
 
 **Why normalized, log-transformed counts?**
+
 - **Normalization**: Accounts for differences in sequencing depth (total counts) between cells
 - **Log transformation**: 
   - Stabilizes variance (highly expressed genes don't dominate)
@@ -134,6 +139,7 @@ log-transformed.
   - Converts multiplicative effects to additive (fold-changes become differences)
 
 **Using `adata.raw`:**
+
 - Contains all genes with normalized, log-transformed counts
 - Not affected by subsetting to HVGs or scaling/regression
 - Default for DGE functions in Scanpy
@@ -163,6 +169,7 @@ sc.pl.umap(adata, color='leiden_0.6')
 **The t-test is a classical statistical test for comparing means between two groups.**
 
 **How it works:**
+
 - Calculates the mean expression of each gene in cluster A vs. all other cells
 - Computes a t-statistic: (difference in means) / (standard error of difference)
 - Assumes data are normally distributed (log-transformation helps with this)
@@ -172,15 +179,18 @@ sc.pl.umap(adata, color='leiden_0.6')
 $$t = \frac{\bar{X}_1 - \bar{X}_2}{SE}$$
 
 Where:
+
 - $\bar{X}_1, \bar{X}_2$ = mean expression in group 1 and group 2
 - $SE$ = standard error of the difference
 
 **Advantages:**
+
 - Fast computation
 - Well-understood statistical properties
 - Parametric (uses distributional assumptions)
 
 **Disadvantages:**
+
 - Assumes equal variance between groups (often violated in scRNA-seq)
 - Sensitive to outliers
 - May not handle zero-inflation well (many genes have zero counts in many cells)
@@ -195,6 +205,78 @@ sc.pl.rank_genes_groups(adata, n_genes=25, sharey=False, key = "t-test")
 adata.uns.keys()
 ```
 
+::: {.callout-tip}
+## What to Look For in Rank Genes Groups Plot
+
+### **Understanding the Visualization** ✅
+
+**Layout:**
+
+- **One panel per cluster**
+- **Y-axis**: Gene names (top markers)
+- **X-axis**: Test statistic (higher = more significant/stronger effect)
+- **Top genes**: Most differentially expressed in that cluster
+
+**Expected patterns:**
+
+- ✅ **Recognizable markers**: Known cell type markers should appear
+  - Cluster with CD3E → T cells
+  - Cluster with MS4A1 → B cells
+  - Cluster with CD14, LYZ → Monocytes
+- ✅ **Different genes per cluster**: Each cluster has unique top markers
+- ✅ **Strong signals**: Large differences in test statistics
+
+---
+
+### **Quality Indicators** 🔍
+
+**Good marker genes:**
+
+- ✅ **Biologically interpretable**: You can identify cell types from markers
+- ✅ **Specific**: Gene appears in top markers of only one cluster (or a few related clusters)
+- ✅ **High fold-change**: Large difference between cluster and others
+- ✅ **Low p-value**: Statistically significant
+
+**Poor marker genes:**
+
+- 🚩 **Ribosomal/mitochondrial genes dominate**: RPL/RPS/MT genes in top 5
+  - Indicates low-quality cluster or failed filtering
+  - Technical genes, not biological markers
+- 🚩 **Housekeeping genes**: ACTB, GAPDH, MALAT1 as top markers
+  - Cluster defined by technical features, not biology
+- 🚩 **Same genes across multiple clusters**: Not specific enough
+- 🚩 **Unrecognizable genes**: All top markers are obscure/unannotated
+  - May be novel biology or noisy cluster
+
+---
+
+### **Comparing Across Clusters** 🔍
+
+**Complementary patterns:**
+
+- Different clusters should have **different top genes**
+- Related clusters may share some markers but differ in others
+- Example: CD4+ and CD8+ T cells both have CD3E, but differ in CD4 vs. CD8A
+
+**Red flags:**
+
+- 🚩 **Multiple clusters with identical markers**: Over-clustering
+- 🚩 **No clear markers for a cluster**: Poorly defined cluster or mixed population
+- 🚩 **One cluster dominates statistics**: Very large cluster vs. very small clusters
+
+---
+
+### **In This Dataset**:
+
+**Check each cluster's top genes:**
+
+- Can you identify T cell clusters? (CD3E, CD3D, CD3G)
+- Can you identify monocyte clusters? (CD14, LYZ, CST3, S100A8, S100A9)
+- Can you identify B cell clusters? (MS4A1, CD79A, CD79B)
+- Can you identify NK clusters? (GNLY, NKG7, GZMA)
+- Are there any clusters dominated by housekeeping/ribosomal genes? (problematic)
+:::
+
 ## T-test overestimated_variance
 
 ::: {.callout-note}
@@ -203,11 +285,13 @@ adata.uns.keys()
 **The overestimated variance t-test is a modification that's more robust for single-cell data.**
 
 **The problem with standard t-test:**
+
 - In scRNA-seq, genes often have very low variance within a cluster (many cells have zero or similar low expression)
 - This leads to very small standard errors
 - Result: inflated t-statistics and overly optimistic p-values
 
 **The overestimated variance approach:**
+
 - Intentionally **inflates the variance estimate** to be more conservative
 - Uses a pooled variance across all groups rather than group-specific variance
 - Helps prevent false positives from genes with artificially low variance
@@ -239,22 +323,26 @@ diffxpy.
 **The Wilcoxon rank-sum test (Mann-Whitney U test) is a non-parametric alternative to the t-test.**
 
 **How it works:**
+
 1. **Rank** all cells by expression of a gene (regardless of group)
 2. **Sum ranks** for cells in cluster A vs. other cells
 3. **Test**: Are ranks higher/lower than expected by chance?
 
 **Key differences from t-test:**
+
 - **Non-parametric**: Makes no assumptions about data distribution
 - **Robust to outliers**: Uses ranks instead of actual values
 - **Handles zero-inflation better**: Many zeros don't skew results as much
 
 **Advantages for scRNA-seq:**
+
 - More robust to the heavy zero-inflation in scRNA-seq data
 - Doesn't assume normality
 - Less sensitive to extreme outliers
 - Generally recommended for single-cell studies
 
 **Disadvantages:**
+
 - Slightly less power than t-test when data are truly normal
 - Doesn't provide effect size directly (though can calculate log fold-change separately)
 - Computationally slower for very large datasets
@@ -282,28 +370,33 @@ al. (2014) has more details.
 **Logistic regression is a multivariate machine learning approach to finding marker genes.**
 
 **How it differs from t-test/Wilcoxon:**
+
 - **Univariate tests** (t-test, Wilcoxon): Evaluate each gene independently
   - Question: "Is gene X differentially expressed in cluster A?"
 - **Multivariate approach** (logistic regression): Evaluates genes together
   - Question: "Which combination of genes best predicts cluster membership?"
 
 **Logistic regression approach:**
+
 1. **Model**: Predicts cluster membership from gene expression: $P(cluster=A) = f(gene_1, gene_2, ..., gene_n)$
 2. **Feature importance**: Genes with high regression coefficients are strong predictors
 3. **Classification**: Identifies genes that are both specific and sensitive for a cluster
 
 **Advantages:**
+
 - Finds genes that are **jointly** predictive (not just individually)
 - Can account for correlations between genes
 - Provides classification-oriented markers (useful for cell type identification)
 
 **Disadvantages:**
+
 - More complex interpretation
 - Computationally more intensive
 - May be overfit-prone with many genes
 - Less commonly used in scRNA-seq literature
 
 **When to use:**
+
 - When you need markers for classification/prediction
 - When genes are correlated and you want to find unique combinations
 - For building cell type classifiers
@@ -326,11 +419,13 @@ the overlap.
 **Comparing results across methods reveals which marker genes are robust vs. method-specific.**
 
 **High overlap** (center of Venn diagram):
+
 - Genes found by all methods are **highly reliable markers**
 - These are strongly and consistently differentially expressed
 - Safest choices for cell type annotation or validation
 
 **Method-specific genes**:
+
 - Found by only one method
 - May represent:
   - **True positives missed by other methods** (e.g., genes with non-normal distributions found by Wilcoxon but not t-test)
@@ -338,6 +433,7 @@ the overlap.
   - **Edge cases** near significance thresholds
 
 **Practical approach:**
+
 - Use the **intersection** for high-confidence markers
 - Investigate method-specific genes manually with visualization
 - Consider the **union** for exploratory analysis
@@ -357,6 +453,99 @@ venn3([set(wc),set(tt),set(tt_ov)], ('Wilcox','T-test','T-test_ov') )
 plt.show()
 ```
 
+::: {.callout-tip}
+## What to Look For in Method Comparison Venn Diagram
+
+### **Expected Overlap** ✅
+
+**High concordance:**
+
+- ✅ **Large overlap** between all three methods (>60%)
+- ✅ **Wilcoxon and t-test_ov very similar** (often >80% overlap)
+- ✅ **Standard t-test has most genes** (most liberal, detects weak signals)
+- ✅ **t-test_ov more conservative** (fewer genes but higher confidence)
+
+**Interpretation:**
+
+- **Center (all three)**: Most robust markers, use these for annotation
+- **Wilcox + t-test_ov only**: Likely true positives, conservative markers
+- **t-test only**: May include false positives from low-variance genes
+
+---
+
+### **Method Characteristics** 🔍
+
+**Standard t-test (largest circle):**
+
+- Most permissive
+- May include genes with unstable variance
+- More false positives but also more true positives
+
+**T-test overestimated variance (medium):**
+
+- More conservative than standard t-test
+- Reduces false positives from zero-inflated genes
+- Good balance for scRNA-seq
+
+**Wilcoxon (robust):**
+
+- Most robust to outliers and distributional assumptions
+- May miss some genes that t-test finds
+- Generally recommended for final marker selection
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Very low overlap (<30%)**:
+
+- 🚩 Methods completely disagree = unstable marker detection
+- 🚩 Data may be very noisy or cluster poorly defined
+- **Action**: Check cluster quality, try different normalization
+
+**One method finds 10x more genes**:
+
+- 🚩 That method may be too liberal or have technical issues
+- **Action**: Use more conservative method
+
+**Tiny overlap but many genes per method**:
+
+- 🚩 Each method finding different false positives
+- **Action**: Increase stringency (higher fold-change cutoff, lower p-value cutoff)
+
+---
+
+### **Best Practice** 💡
+
+**Reporting strategy:**
+
+1. **Primary analysis**: Use **Wilcoxon** (most commonly accepted)
+2. **Validation**: Check if top markers also found by t-test_ov
+3. **High-confidence markers**: Use **intersection** of methods
+4. **Comprehensive analysis**: Report Wilcoxon results, note overlap
+
+**Example annotation workflow:**
+
+```python
+# Get high-confidence markers (intersection)
+robust_markers = set(wc) & set(tt_ov)
+
+# These are safest for cell type annotation
+# Then check with known markers from literature
+```
+
+---
+
+### **In This Dataset**:
+
+**Check the Venn diagram:**
+
+- Is overlap between Wilcoxon and t-test_ov high (>70%)?
+- How many genes are unique to standard t-test?
+- Are there many genes in the center (found by all methods)?
+- Choose the intersection for highest-confidence marker genes
+:::
+
 As you can see, the Wilcoxon test and the t-test with overestimated
 variance give very similar results. Also the regular t-test has good
 overlap.
@@ -373,28 +562,33 @@ dotplot, violin plots or a matrix with average expression.
 **Different visualizations reveal different aspects of marker gene expression:**
 
 **Heatmap:**
+
 - Shows expression patterns across all cells
 - Reveals gradients and heterogeneity within clusters
 - Good for seeing overall patterns
 
 **Dot plot:**
+
 - **Dot size**: % of cells expressing the gene (detection rate)
 - **Dot color**: Mean expression level in expressing cells
 - Efficiently shows both prevalence and intensity
 - Best for comparing markers across many clusters
 
 **Violin plot:**
+
 - Shows the full distribution of expression
 - Reveals bimodality (some cells high, some low)
 - Shows outliers and expression variance
 - Good for understanding heterogeneity
 
 **Matrix plot:**
+
 - Mean expression as color intensity
 - Clean, simple summary
 - Good for publications
 
 **Which to use?**
+
 - **Quick overview**: Dot plot or matrix plot
 - **Detailed inspection**: Violin plot or heatmap
 - **Publication**: Depends on story (dot plots are very popular)
@@ -408,6 +602,179 @@ sc.pl.rank_genes_groups_stacked_violin(adata, n_genes=5, key="wilcoxon", groupby
 sc.pl.rank_genes_groups_matrixplot(adata, n_genes=5, key="wilcoxon", groupby="leiden_0.6")
 ```
 
+::: {.callout-tip}
+## What to Look For in DGE Visualization Plots
+
+### **Heatmap Interpretation** 🔥
+
+**Expected pattern:**
+
+- ✅ **Block diagonal pattern**: Each cluster's markers high in that cluster, low in others
+- ✅ **Clear color contrast**: Bright (red/yellow) in home cluster, dark (blue/purple) elsewhere
+- ✅ **Dendrogram groups related clusters**: T cell clusters branch together
+- ✅ **Unique markers per cluster**: Different genes for different clusters
+
+**Good marker specificity:**
+
+- Marker gene column shows ONE bright spot (its cluster)
+- Other clusters are dark for that gene
+- Clear visual separation
+
+**Red flags:**
+
+- 🚩 **Gene high in many clusters**: Not specific enough
+- 🚩 **All genes look similar**: Poor marker selection or normalization issue
+- 🚩 **Housekeeping genes** (RPL, RPS, MT) as markers: Low-quality cluster
+- 🚩 **No color contrast**: Markers not actually differentially expressed
+
+---
+
+### **Dotplot Interpretation** ⚫
+
+**Reading the plot:**
+
+- **Rows**: Clusters
+- **Columns**: Genes (top 5 per cluster)
+- **Dot size**: % of cells in cluster expressing gene
+- **Dot color**: Mean expression level (red = high, blue = low)
+
+**Perfect marker:**
+
+- ✅ **Large red dot in home cluster**
+- ✅ **Small blue/gray dots in other clusters**
+- ✅ Shows both high expression (color) and high prevalence (size)
+
+**Example patterns:**
+
+- CD3E in T cells: Large red dot in T cell clusters, small blue dots elsewhere
+- MS4A1 in B cells: Large red dot in B cell cluster only
+- S100A9 in monocytes: May appear in multiple myeloid clusters (related cell types)
+
+**Warning patterns:**
+
+- 🚩 **Medium-sized dots across all clusters**: Ubiquitously expressed, not a good marker
+- 🚩 **Small dot in home cluster**: Low detection rate, may not be reliable marker
+- 🚩 **Large dots in many clusters**: Not specific
+
+**Shared markers across related clusters:**
+
+- ✅ **Expected**: S100A9 in both classical and non-classical monocytes (related lineages)
+- ✅ **CD3E in multiple T cell clusters**: Pan-lineage marker
+- This is **normal**—shows biological relationships
+
+---
+
+### **Violin Plot Interpretation** 🎻
+
+**Reading the plot:**
+
+- **X-axis**: Clusters
+- **Y-axis**: Expression level
+- **Width**: Number of cells at that expression level
+- **Shape**: Distribution of expression
+
+**Expected patterns:**
+
+**Good marker:**
+
+- ✅ **Wide violin at top in home cluster**: Many cells with high expression
+- ✅ **Narrow violin at bottom in other clusters**: Few/no cells expressing
+- ✅ Clear separation between groups
+
+**Distribution shapes:**
+
+- **Narrow violin**: Homogeneous expression (all cells similar)
+- **Wide violin**: Heterogeneous expression (variable across cells)
+- **Bimodal** (two peaks): Subpopulations within cluster (may need subclustering)
+- **Long tail**: Outlier cells with very high expression
+
+**Red flags:**
+
+- 🚩 **Similar distributions across all clusters**: Not differentially expressed
+- 🚩 **Bimodal in home cluster**: Cluster may be heterogeneous (contains subtypes)
+- 🚩 **Higher in other clusters**: Gene was ranked incorrectly or cluster mislabeled
+
+---
+
+### **Matrix Plot Interpretation** 🟦
+
+**Reading the plot:**
+
+- **Rows**: Clusters
+- **Columns**: Genes
+- **Color**: Mean expression (red = high, blue = low)
+
+**Expected pattern:**
+
+- ✅ **Diagonal or block pattern**: Each gene brightest in its home cluster
+- ✅ **Clear color gradients**: Strong differential expression
+- ✅ **Dendrogram groups similar clusters**: Related cell types clustered together
+
+**Similar to heatmap but:**
+
+- Cleaner, more simplified
+- Equal spacing for all genes (not scaled by number of cells)
+- Better for publication figures
+
+---
+
+### **Choosing the Right Visualization** 🎨
+
+**For marker validation:**
+
+- **Dotplot**: Best overview of expression + detection rate
+- **Violin**: Understand expression heterogeneity
+- **Heatmap**: See patterns across all cells
+
+**For publications:**
+
+- **Dotplot**: Most information-dense, widely used
+- **Matrix plot**: Clean, simple
+- **Heatmap**: Good for showing gradients
+
+**For exploration:**
+
+- **Violin**: Detailed distributions
+- **Heatmap**: Overall patterns and relationships
+
+---
+
+### **Common Patterns Explained** 💡
+
+**Marker gene expressed in related clusters:**
+
+- Example: S100A9 in clusters 0 and 7
+- **Interpretation**: Both are myeloid lineage (monocytes)
+- **On dendrogram**: These clusters should branch together
+- **On dotplot**: Both show large red dots for S100A9
+- **Conclusion**: Shared lineage marker, not cluster-specific
+
+**Housekeeping genes as markers (BAD):**
+
+- Example: RPL13, TPT1 as top markers for cluster 4
+- **On heatmap**: Slightly brighter in cluster 4, but present everywhere
+- **On dotplot**: Medium dots across all clusters
+- **Conclusion**: Cluster 4 is likely low-quality cells or doublets
+
+---
+
+### **In This Dataset**:
+
+**Examine all four plot types:**
+
+- **Heatmap**: Do you see clear block patterns?
+- **Dotplot**: Which clusters have the most specific markers (large red dots)?
+- **Violin**: Are any markers bimodally distributed (suggesting subclusters)?
+- **Matrix plot**: Does the dendrogram group biologically related clusters?
+
+**Validate clustering:**
+
+- Do marker genes make biological sense?
+- Can you identify T cells, B cells, monocytes, NK cells?
+- Are any clusters defined by housekeeping genes (problematic)?
+- Do related clusters share some markers?
+:::
+
 ## Compare specific clusters
 
 We can also do pairwise comparisons of individual clusters on one vs
@@ -420,16 +787,19 @@ profiles.
 **Pairwise cluster comparisons identify subtle differences between similar cell populations.**
 
 **Use cases:**
+
 - **Closely related cell types**: CD4+ helper T cells vs. regulatory T cells
 - **Cell states**: Resting vs. activated monocytes
 - **Validation**: Are two clusters truly distinct or should they be merged?
 
 **Setting `reference='2'`:**
+
 - Instead of comparing cluster 1 to **all other cells**, compare cluster 1 to **cluster 2 only**
 - More sensitive for detecting small differences
 - Removes noise from unrelated cell types
 
 **Interpretation:**
+
 - **Many DEGs**: Clusters are distinct cell types/states
 - **Few DEGs**: Clusters might represent over-clustering; consider merging
 - **Expected differences**: Validates biological hypothesis (e.g., marker genes you expect between these subtypes)
@@ -440,6 +810,77 @@ profiles.
 sc.tl.rank_genes_groups(adata, 'leiden_0.6', groups=['1'], reference='2', method='wilcoxon')
 sc.pl.rank_genes_groups(adata, groups=['1'], n_genes=20)
 ```
+
+::: {.callout-tip}
+## What to Look For in Pairwise Cluster Comparisons
+
+### **Interpreting Pairwise DE Results** ✅
+
+**Many significant DEGs (>100):**
+
+- ✅ Clusters represent **distinct biological populations**
+- ✅ Clear marker genes distinguish them
+- ✅ Justified as separate clusters
+
+**Few significant DEGs (<20):**
+
+- 🤔 Clusters may be **over-clustered** (artificially split)
+- 🤔 May represent **cell states** rather than types (e.g., activated vs. resting)
+- **Action**: Consider merging or using lower resolution
+
+**No significant DEGs:**
+
+- 🚩 Clusters are essentially **identical**
+- 🚩 Should definitely be merged
+- **Action**: Reduce clustering resolution
+
+---
+
+### **Types of Differences** 🔍
+
+**Quantitative differences:**
+
+- Same genes expressed, different levels
+- Example: Both clusters express CD4, but one has higher levels
+- Suggests **similar cell types in different states**
+
+**Qualitative differences:**
+
+- Completely different genes
+- Example: One cluster has CD4, other has CD8A
+- Suggests **distinct cell subtypes**
+
+---
+
+### **Validation Strategy** ✅
+
+**If clusters seem very similar:**
+
+1. **Check dendrogram**: Do they branch closely?
+2. **Check dotplot**: Do they share most markers?
+3. **Check biological literature**: Are they known distinct subtypes?
+4. **Decision**: 
+   - Merge if no clear biological distinction
+   - Keep separate if literature supports subtypes
+
+**If clusters are distinct:**
+
+- Validate with known markers
+- Check if differences are consistent across samples
+- Verify biological interpretation makes sense
+
+---
+
+### **In This Dataset**:
+
+**For clusters 1 and 2:**
+
+- How many DEGs separate them?
+- Do the DEGs make biological sense?
+- Are they both T cells with subtle differences, or truly distinct?
+- Should they be merged or kept separate?
+- Check their positions on the dendrogram from earlier
+:::
 
 Plot as violins for those two groups, or across all the clusters.
 
@@ -453,6 +894,80 @@ sc.pl.rank_genes_groups_violin(adata, groups='1', n_genes=10)
 mynames = [x[0] for x in adata.uns['rank_genes_groups']['names'][:10]]
 sc.pl.stacked_violin(adata, mynames, groupby = 'leiden_0.6')
 ```
+
+::: {.callout-tip}
+## What to Look For in Pairwise Violin Plots
+
+### **Single Group Violin (cluster 1 markers)** 🎻
+
+**Expected pattern:**
+
+- ✅ **Top panel (cluster 1)**: Wide violins at high expression
+- ✅ **Bottom panel (cluster 2 - reference)**: Narrow violins at low expression
+- ✅ **Clear separation**: Distinct distributions between the two
+
+**What this confirms:**
+
+- Genes are truly higher in cluster 1
+- Not just statistical artifacts
+- Biologically meaningful difference
+
+---
+
+### **Stacked Violin Across All Clusters** 🎻
+
+**Expected pattern:**
+
+- ✅ **Cluster 1 has highest/widest violins**: Confirms these are cluster 1 markers
+- ✅ **Other clusters low**: Demonstrates specificity
+- ✅ **Related clusters may have intermediate expression**: Shows biological relationships
+
+**Interpretation:**
+
+**Highly specific marker:**
+
+- Violin high and wide only in cluster 1
+- All other clusters near zero
+- **Best markers for annotation**
+
+**Lineage marker:**
+
+- High in cluster 1 and a few related clusters
+- Low in unrelated clusters
+- Shows which clusters are biologically related
+
+**Poor marker:**
+
+- Similar violin shapes across multiple unrelated clusters
+- Not useful for distinguishing cluster 1
+
+---
+
+### **Quality Checks** 🔍
+
+**Good markers:**
+
+- ✅ One cluster clearly stands out
+- ✅ Expression difference is large (fold-change >2)
+- ✅ Consistent across cells (most cells in cluster express it)
+
+**Questionable markers:**
+
+- 🚩 **Bimodal in target cluster**: Subpopulations present
+- 🚩 **High variance**: Gene unreliable for identification
+- 🚩 **Similar in many clusters**: Not specific enough
+
+---
+
+### **In This Dataset**:
+
+**Check the stacked violin:**
+
+- Do cluster 1's markers clearly distinguish it from cluster 2?
+- Are there genes high in both 1 and 2 but low elsewhere (shared lineage)?
+- Are any markers surprisingly high in unrelated clusters (check for batch effects)?
+- Do the expression patterns support keeping clusters 1 and 2 separate?
+:::
 
 ## DGE across conditions
 
@@ -470,16 +985,19 @@ cluster, then change the cell identities to the variable of comparison
 **Within-cluster DGE reveals how disease affects specific cell types.** This is often the most biologically interesting analysis in disease studies.
 
 **Example questions:**
+
 - How do **monocytes** change in COVID-19 patients vs. healthy controls?
 - Which genes are upregulated in **COVID-19 T cells** specifically?
 - Do different cell types respond differently to the same disease?
 
 **Why subset to one cluster first?**
+
 - **Cell type specificity**: The response to COVID-19 in monocytes is completely different from the response in T cells
 - **Biological relevance**: Averaging across all cell types would mask cell-type-specific effects
 - **Statistical power**: Comparing apples-to-apples (same cell type, different conditions)
 
 **Interpretation:**
+
 - **Upregulated in COVID**: Genes involved in disease response, inflammation, stress
 - **Downregulated in COVID**: Genes involved in normal homeostatic functions
 - **Cell-type-specific responses**: Some genes may be COVID-responsive only in certain cell types
@@ -494,10 +1012,123 @@ sc.tl.rank_genes_groups(cl1, 'type', method='wilcoxon', key_added = "wilcoxon")
 sc.pl.rank_genes_groups(cl1, n_genes=25, sharey=False, key="wilcoxon")
 ```
 
+::: {.callout-tip}
+## What to Look For in Condition-Specific DGE
+
+### **COVID vs. Control DE Genes** ✅
+
+**Expected for COVID-19:**
+
+**Upregulated in COVID (immune activation):**
+
+- **Interferon-stimulated genes**: ISG15, MX1, IFIT1, OAS1
+- **Inflammatory genes**: IL1B, TNF, IL6, CXCL8
+- **Antiviral response**: IFI6, IFI44L, IFITM3
+- **Stress response**: Heat shock proteins, ER stress genes
+
+**Downregulated in COVID (suppressed functions):**
+
+- **Homeostatic functions**: Normal cell maintenance genes
+- **Ribosomal genes**: Sometimes reduced in stressed cells
+- **Cell type-specific functions**: Normal immune surveillance
+
+---
+
+### **Evaluating Results** 🔍
+
+**Good DE results:**
+
+- ✅ **Biologically interpretable**: Genes fit known COVID biology
+- ✅ **Coherent pathways**: Multiple genes from same pathway
+- ✅ **Literature support**: Genes previously implicated in COVID or viral response
+
+**Suspicious results:**
+
+- 🚩 **Sex chromosome genes**: Indicates sex imbalance (will filter below)
+- 🚩 **Housekeeping genes**: May indicate quality differences between conditions
+- 🚩 **Random unrelated genes**: Could be noise or batch effects
+- 🚩 **Sample-specific genes**: Need to check per-patient consistency
+
+---
+
+### **In This Dataset (Cluster 4)**:
+
+**Check the rank_genes_groups plot:**
+
+- Are there interferon-stimulated genes upregulated in COVID?
+- Are there inflammatory markers?
+- Do you see sex chromosome genes? (will be removed)
+- Do the results make biological sense for COVID-19?
+:::
+
 ```{python}
 #| label: condition-vln
 sc.pl.rank_genes_groups_violin(cl1, n_genes=10, key="wilcoxon")
 ```
+
+::: {.callout-tip}
+## What to Look For in Condition DE Violin Plots
+
+### **COVID vs. Ctrl Comparison** ✅
+
+**Expected pattern:**
+
+- ✅ **Clear separation** between COVID and Ctrl distributions
+- ✅ **COVID panel**: Higher expression for upregulated genes
+- ✅ **Ctrl panel**: Higher expression for their top genes (downregulated in COVID)
+- ✅ **Minimal overlap**: Distinct distributions
+
+**Interpretation:**
+
+**Strong COVID response:**
+
+- COVID violins shifted high, Ctrl violins at zero
+- Most COVID cells express the gene
+- Clear disease signature
+
+**Moderate response:**
+
+- Some overlap between distributions
+- Not all COVID cells high
+- Still biologically relevant
+
+**Weak/questionable:**
+
+- Distributions largely overlap
+- Difference driven by a few outlier cells
+- May not be robust
+
+---
+
+### **Red Flags** 🚩
+
+**High in both conditions:**
+
+- 🚩 Similar distributions = not truly differentially expressed
+- May have passed due to large sample size
+- Check fold-change and effect size
+
+**Bimodal in one condition:**
+
+- 🚩 COVID violins show two peaks = heterogeneous response
+- Some COVID patients respond, others don't
+- Check patient-specific patterns
+
+**Outlier-driven:**
+
+- 🚩 Difference due to few cells with extreme values
+- Median/mean don't differ much
+- Not robust marker
+
+---
+
+### **In This Dataset**:
+
+- Do top COVID genes show clear elevation in COVID vs. Ctrl?
+- Are the differences consistent (all COVID cells affected)?
+- Are any genes unexpectedly high in controls?
+- Check for sex genes in the next plot
+:::
 
 We can also plot these genes across all clusters, but split by "type",
 to check if the genes are also up/downregulated in other cell types.
@@ -515,6 +1146,110 @@ df2 = df.melt(id_vars=["leiden_0.6",'type'], value_vars=genes)
 sns.catplot(x = "leiden_0.6", y = "value", hue = "type", kind = 'violin', col = "variable", data = df2, col_wrap=4, inner=None)
 ```
 
+::: {.callout-tip}
+## What to Look For in Cross-Cluster Condition Plots
+
+### **Cell Type Specificity of Response** ✅
+
+**This plot shows whether COVID-response genes are:**
+
+1. **Cell-type-specific**: High in COVID vs. Ctrl only in cluster 4
+2. **Broadly responsive**: High in COVID vs. Ctrl across multiple cell types
+3. **Non-specific artifacts**: Differences unrelated to biology
+
+**Expected patterns:**
+
+**Cell-type-specific response:**
+
+- ✅ Gene high in COVID vs. Ctrl **only in cluster 4** (and maybe related clusters)
+- ✅ No COVID/Ctrl difference in unrelated cell types
+- **Interpretation**: Gene is part of cluster 4's specific response to COVID
+
+**Broadly responsive gene:**
+
+- ✅ Gene high in COVID vs. Ctrl **across multiple clusters**
+- ✅ Coordinated response across cell types
+- **Interpretation**: General COVID response (e.g., interferon signaling affects all immune cells)
+
+**Technical artifact:**
+
+- 🚩 Gene high in COVID across **all clusters equally**
+- 🚩 No cell-type specificity
+- **Interpretation**: Likely batch effect, sex effect, or sample quality difference
+
+---
+
+### **Interpreting Patterns** 🔍
+
+**For each gene panel, check:**
+
+**Pattern 1: Cluster 4 shows COVID > Ctrl, other clusters no difference**
+
+- ✅ True cluster-4-specific COVID response
+- Most interesting for understanding this cell type's biology
+
+**Pattern 2: Multiple clusters show COVID > Ctrl**
+
+- ✅ Shared immune response across cell types
+- Example: Interferon genes often affect multiple cell types
+- Still biologically meaningful
+
+**Pattern 3: COVID > Ctrl everywhere**
+
+- 🚩 May be technical (batch, sex, quality)
+- 🚩 Or true systemic response (check literature)
+- Need validation
+
+**Pattern 4: COVID > Ctrl in cluster 4, but gene also highly expressed in completely different cluster**
+
+- 🤔 Gene may be a marker for that other cluster, coincidentally higher in COVID samples
+- Less reliable as COVID-response marker
+
+---
+
+### **Sex Chromosome Genes** ⚠️
+
+**Warning pattern (as noted in text):**
+
+- 🚩 Sex genes (e.g., RPS4Y1, XIST, DDX3Y) among top DE
+- 🚩 May show COVID > Ctrl or Ctrl > COVID depending on sex imbalance
+- **Cause**: COVID and control groups have different M:F ratios
+- **Solution**: Remove sex chromosome genes (done below)
+
+---
+
+### **Quality Assessment** 🔍
+
+**Good condition-specific DE:**
+
+- Most genes specific to cluster 4 (or related cell types)
+- Biologically coherent (genes in same pathways)
+- Literature support for COVID biology
+
+**Poor/confounded DE:**
+
+- All genes show pattern across all clusters (batch effect)
+- Sex genes dominate results (sex imbalance)
+- No biological coherence (random genes)
+
+---
+
+### **In This Dataset**:
+
+**Examine each gene panel:**
+
+- Is the COVID vs. Ctrl difference specific to cluster 4?
+- Do any genes respond across multiple immune cell types (shared response)?
+- Are there sex chromosome genes (XIST, RPS4Y1, etc.)?
+- Which genes would you trust as true COVID-response genes in this cell type?
+
+**Follow-up:**
+
+- Cell-type-specific genes: Most interesting for mechanistic understanding
+- Broadly responsive genes: Systemic COVID effects
+- Sex genes: Remove and reanalyze
+:::
+
 As you can see, we have many sex chromosome related genes among the top
 DE genes. And if you remember from the QC lab, we have imbalanced sex
 distribution among our subjects, so this is probably not related to
@@ -524,10 +1259,12 @@ COVID at all.
 ## Important: Confounding variables
 
 **Sex is a confounding variable** in this comparison. If COVID and control groups have different sex distributions:
+
 - Sex-linked genes will appear as "COVID-responsive"
 - This is a **false positive**—the genes change because of sex, not disease
 
 **Other common confounders in scRNA-seq:**
+
 - **Age**: Aging affects immune cell composition and function
 - **Batch**: Samples processed on different days
 - **Ethnicity**: Genetic background affects gene expression
@@ -535,6 +1272,7 @@ COVID at all.
 - **Sample quality**: RNA degradation, cell viability
 
 **Solutions:**
+
 1. **Balanced experimental design**: Match groups for potential confounders
 2. **Filter confounded genes**: Remove sex chromosome genes (as done below)
 3. **Statistical models**: Include confounders as covariates (requires specialized tools like MAST, EdgeR)
@@ -579,6 +1317,52 @@ sc.tl.rank_genes_groups(cl1, 'type', method='wilcoxon', key_added = "wilcoxon")
 sc.pl.rank_genes_groups(cl1, n_genes=25, sharey=False, key="wilcoxon")
 ```
 
+::: {.callout-tip}
+## What to Look For After Removing Sex Genes
+
+### **Expected Changes** ✅
+
+**Top DE genes should now:**
+
+- ✅ **No sex chromosome genes**: XIST, RPS4Y1, DDX3Y, etc. removed
+- ✅ **More biologically relevant genes**: Immune, inflammatory, viral response genes
+- ✅ **Interpretable pathways**: Genes cluster into coherent biological processes
+
+**Interpretation:**
+
+- Results now reflect **true COVID response** rather than sex differences
+- Still need to check for patient-specific effects
+
+---
+
+### **New Top Genes Should Include** 💡
+
+**Expected COVID-upregulated genes in immune cells:**
+
+- **Type I interferon response**: ISG15, MX1, IFI6, IFIT3, OAS1
+- **Inflammatory cytokines**: IL1B, TNF, CXCL8, CCL3
+- **Antiviral genes**: IFITM3, BST2, IFI44L
+- **Stress response**: HSPA1A, DNAJB1
+
+**These make biological sense for COVID-19.**
+
+**If you still see many sex genes:**
+
+- 🚩 Filtering may have failed
+- **Action**: Recheck filtering code
+
+---
+
+### **In This Dataset**:
+
+**Compare before and after sex gene removal:**
+
+- Are top genes now more interpretable?
+- Do you recognize immune/inflammatory genes?
+- Are results more coherent with COVID biology?
+- Do the genes cluster into pathways (check with GSEA below)?
+:::
+
 Now at least we do not have the sex chromosome genes as DE but still,
 some of the differences between patient and control could still be
 related to sex.
@@ -596,6 +1380,7 @@ DGEs are expressed in that cluster, across the individuals:
 **Individual variability is a major challenge in human studies.** Unlike inbred mouse strains, humans are genetically diverse, have different environmental exposures, ages, medications, and disease severity.
 
 **The problem:**
+
 - You have 4 COVID patients and 4 controls
 - Each patient is unique
 - Some COVID patients might have severe disease, others mild
@@ -603,6 +1388,7 @@ DGEs are expressed in that cluster, across the individuals:
 - **Risk**: A gene that's high in just one COVID patient might be detected as "significantly upregulated in COVID"
 
 **What to look for:**
+
 - **Consistent patterns**: Gene high in all/most COVID patients → likely COVID-related
 - **Patient-specific patterns**: Gene high in only one patient → could be that individual's biology, not COVID
 - **Batch effects**: Gene high in samples processed together → technical artifact
@@ -621,6 +1407,100 @@ sc.pl.violin(cl1, genes1, groupby='sample', rotation=45)
 sc.pl.violin(cl1, genes2, groupby='sample', rotation=45)
 ```
 
+::: {.callout-tip}
+## What to Look For in Per-Sample DE Gene Expression
+
+### **Assessing Consistency Across Patients** ✅
+
+**Robust COVID-upregulated gene:**
+
+- ✅ **All 4 COVID samples show high expression**
+- ✅ **All 4 Control samples show low expression**
+- ✅ **Clear separation between groups**
+- ✅ **Similar patterns across COVID replicates**
+
+**Robust control-upregulated gene:**
+
+- ✅ All control samples high
+- ✅ All COVID samples low
+- ✅ Consistent pattern
+
+---
+
+### **Patient-Specific Effects** 🚩
+
+**Gene high in only one COVID patient:**
+
+- 🚩 Example: Gene high in covid_17, low in covid_1, covid_15, covid_16
+- **Interpretation**: 
+  - Could be patient-specific biology (genetic variation, disease severity)
+  - Could be technical (sample processing difference)
+  - **NOT a general COVID signature**
+- **Action**: Deprioritize for COVID biomarker discovery
+
+**Gene high in 2-3 of 4 patients:**
+
+- 🤔 **Mixed evidence**
+- Could be real but variable response
+- Or patient heterogeneity (age, severity, timepoint)
+- Needs larger cohort to validate
+
+---
+
+### **Sample Quality Issues** 🚩
+
+**One sample systematically different:**
+
+- 🚩 covid_17 has higher expression for many "DE" genes
+- 🚩 Could indicate:
+  - Different disease severity
+  - Different timepoint of sampling
+  - Technical batch effect
+  - More cells from this sample (over-represented in DE)
+
+**Batch patterns:**
+
+- 🚩 Samples processed together have similar expression (regardless of COVID/Ctrl)
+- Indicates batch effect contamination
+
+---
+
+### **Decision Framework** 🎯
+
+**Trust a DE gene if:**
+
+1. **Consistent across replicates**: Most/all COVID (or Ctrl) samples show the pattern
+2. **Biologically plausible**: Fits known COVID biology
+3. **Not driven by one outlier**: Multiple samples contribute to signal
+4. **Validated across cell types**: If important, should appear in multiple relevant cell types
+
+**Be skeptical if:**
+
+- Only one patient drives the signal
+- Gene expression correlates with unrelated factor (sex, age, batch)
+- No biological explanation for the change
+
+---
+
+### **In This Dataset**:
+
+**Check both violin plots:**
+
+**COVID-upregulated genes:**
+
+- Are they high in all COVID samples (covid_1, covid_15, covid_16, covid_17)?
+- Are they consistently low in controls?
+- Or is one COVID sample (like covid_17) driving the results?
+
+**Control-upregulated genes:**
+
+- Are they high in all control samples?
+- Are they low in all COVID samples?
+- Consistent pattern?
+
+**Critical question**: How many of your top DE genes are truly COVID-response genes vs. patient-specific?
+:::
+
 As you can see, many of the genes detected as DGE in COVID are unique to
 one or 2 patients.
 
@@ -634,6 +1514,95 @@ genes = genes1.tolist() +  genes2.tolist()
 
 sc.pl.dotplot(cl1,genes, groupby='sample')
 ```
+
+::: {.callout-tip}
+## What to Look For in Per-Sample Dotplot
+
+### **Reading the Dotplot by Sample** ⚫
+
+**Layout:**
+
+- **Rows**: Individual samples (covid_1, covid_15, covid_16, covid_17, ctrl_5, ctrl_13, ctrl_14, ctrl_19)
+- **Columns**: Top DE genes
+- **Dot size**: % of cells expressing
+- **Dot color**: Mean expression level
+
+---
+
+### **Robust DE Genes** ✅
+
+**Good COVID-upregulated gene:**
+
+- ✅ **All COVID rows**: Large, red dots
+- ✅ **All Ctrl rows**: Small, blue/gray dots
+- ✅ **Consistent within groups**
+- **Use these for** biomarkers, pathway analysis, mechanistic studies
+
+**Good Ctrl-upregulated gene:**
+
+- ✅ All control rows: Large, red dots
+- ✅ All COVID rows: Small, blue dots
+- ✅ Downregulated in disease
+
+---
+
+### **Patient-Specific Genes** 🚩
+
+**Driven by single sample:**
+
+- 🚩 **covid_17**: Large red dot
+- 🚩 **covid_1, covid_15, covid_16**: Small blue dots (similar to controls)
+- **Interpretation**: covid_17-specific, NOT generalizable COVID signature
+- **Action**: Exclude from COVID biomarker list
+
+**Driven by subset of patients:**
+
+- 🚩 2 of 4 COVID samples high, 2 low
+- Variable response or patient heterogeneity
+- May reflect disease severity, timepoint, or genetics
+
+---
+
+### **Batch Effects** 🚩
+
+**Samples processed together:**
+
+- 🚩 covid_15 and covid_16 have similar patterns (different from covid_1 and covid_17)
+- 🚩 ctrl_13 and ctrl_14 cluster together
+- Suggests **processing batch effect** rather than COVID effect
+
+**Sample outlier:**
+
+- 🚩 covid_17 has **many unique patterns**
+- Could be:
+  - Different disease severity (mild vs. severe)
+  - Different sampling timepoint (acute vs. convalescent)
+  - Technical batch
+  - More cells contributing (over-represented)
+
+---
+
+### **In This Dataset (as noted in text)**:
+
+**The observation:** "many of the top COVID genes are only high in covid_17"
+
+**What this means:**
+
+- 🚩 **Results are driven by ONE patient**
+- 🚩 Not generalizable to COVID as a disease
+- 🚩 Could be covid_17's unique biology, not COVID response
+
+**Why this happens:**
+
+- covid_17 has **more cells in cluster 4** (shown below)
+- More cells = more weight in statistical test
+- Test is biased toward covid_17's gene expression
+
+**Solution:**
+
+- Downsample to equal cells per sample (done below)
+- Or use pseudobulk/mixed models
+:::
 
 Clearly many of the top COVID genes are only high in the covid_17
 sample, and not a general feature of COVID patients.
@@ -652,18 +1621,21 @@ cl1.obs['sample'].value_counts()
 **Unbalanced cell numbers per sample creates a statistical bias:**
 
 **The problem:**
+
 - covid_17 has more cells than other samples in this cluster
 - Statistical tests give more weight to samples with more cells
 - DGE results become dominated by covid_17's gene expression
 - Result: You're finding covid_17-specific genes, not COVID-specific genes
 
 **Why this happens:**
+
 - Some samples may have higher cell viability
 - Different sampling efficiency
 - Biological variation (some patients have more of this cell type)
 - Quality filtering may have been harsher on some samples
 
 **Solutions:**
+
 1. **Downsample**: Equalize cell numbers per sample (done below)
 2. **Pseudobulk**: Aggregate cells per sample, then compare samples (requires R packages)
 3. **Mixed models**: Include patient as random effect (MAST, limma)
@@ -684,21 +1656,25 @@ case 37 cells per sample as it is the lowest number among all samples.
 **Subsampling (downsampling) equalizes the contribution of each sample to the statistical test.**
 
 **How it works:**
+
 1. Identify the sample with the **fewest cells** (37 in this case)
 2. Randomly sample exactly 37 cells from **each sample**
 3. Now each sample contributes equally to the comparison
 
 **Advantages:**
+
 - Simple and effective
 - Prevents single-sample dominance
 - Fair comparison across individuals
 
 **Disadvantages:**
+
 - **Loss of power**: Discarding cells means less statistical power
 - **Random sampling**: Different random selections could give slightly different results (use `random_state` for reproducibility)
 - **Information loss**: Throwing away data is not ideal
 
 **Alternative approaches:**
+
 - **Pseudobulk**: Sum counts per sample, then use bulk RNA-seq methods (EdgeR, DESeq2)
 - **Mixed models**: Model patient as a random effect (MAST with patient ID)
 - **Meta-analysis**: Test per patient, then combine p-values
@@ -727,6 +1703,68 @@ sc.tl.rank_genes_groups(cl1_sub, 'type', method='wilcoxon', key_added = "wilcoxo
 sc.pl.rank_genes_groups(cl1_sub, n_genes=25, sharey=False, key="wilcoxon")
 ```
 
+::: {.callout-tip}
+## What to Look For After Subsampling
+
+### **Expected Improvements** ✅
+
+**After equalizing cell numbers:**
+
+- ✅ **More balanced results**: No single sample dominates
+- ✅ **Consistent COVID signature**: Genes high across multiple COVID patients
+- ✅ **Fewer patient-specific genes**: Removed genes unique to covid_17
+- ✅ **More interpretable**: Biologically coherent pathways emerge
+
+**Compare to previous results:**
+
+- Some genes dropped out (were patient-specific)
+- New genes appeared (were masked by sample imbalance)
+- Top genes now represent **shared COVID response**
+
+---
+
+### **Quality Checks** 🔍
+
+**Good subsampled results:**
+
+- Top genes make biological sense for COVID
+- Results more coherent than before
+- Fewer outlier genes
+
+**Still problematic:**
+
+- 🚩 Results completely changed = very unstable, insufficient replicates
+- 🚩 No significant genes left = sample size too small, low power
+- 🚩 Still patient-dominated = need mixed models
+
+---
+
+### **Statistical Considerations** 📊
+
+**Power loss from subsampling:**
+
+- Went from ~296 cells to 296 cells (37 × 8), but more balanced
+- Actually may **gain power** by removing bias
+- Equal contribution = more reliable statistics
+
+**Remaining limitations:**
+
+- Still only 4 vs. 4 samples (low biological replication)
+- Individual variation still large
+- Ideally need 6-10 samples per group
+
+---
+
+### **In This Dataset**:
+
+**Check the updated rank_genes_groups plot:**
+
+- Are results more interpretable than before subsampling?
+- Do top genes appear in COVID biology literature?
+- Are there coherent pathways (interferon, inflammation)?
+- Fewer random/unexplained genes?
+:::
+
 ```{python}
 #| label: dotplot-sub
 genes1 = sc.get.rank_genes_groups_df(cl1_sub, group='Covid', key='wilcoxon')['names'][:20]
@@ -735,6 +1773,88 @@ genes = genes1.tolist() +  genes2.tolist()
 
 sc.pl.dotplot(cl1,genes, groupby='sample')
 ```
+
+::: {.callout-tip}
+## What to Look For in Subsampled Dotplot
+
+### **Improved Results** ✅
+
+**After subsampling, check:**
+
+**Pattern 1: Consistent COVID genes**
+
+- ✅ **All COVID samples** (covid_1, covid_15, covid_16, covid_17): Large red dots
+- ✅ **All Ctrl samples**: Small blue dots
+- ✅ **These are robust COVID biomarkers**
+
+**Pattern 2: Consistent Control genes**
+
+- ✅ All control samples: Large red dots
+- ✅ All COVID samples: Small blue dots
+- ✅ Genes downregulated in COVID
+
+**Pattern 3: Reduced patient-specific signals**
+
+- ✅ Fewer genes with pattern "covid_17 high, other COVID samples low"
+- ✅ More balanced contributions
+
+---
+
+### **Remaining Issues** 🚩
+
+**Still patient-specific:**
+
+- 🚩 Some genes still show covid_17 > other COVID samples
+- Subsampling helps but doesn't completely solve individual variation
+- **Interpretation**: Heterogeneous COVID response or residual batch effect
+
+**One sample still different:**
+
+- 🚩 One sample has opposite pattern from its group
+- May indicate:
+  - Mislabeling
+  - Unique patient characteristics
+  - Technical outlier
+
+**No consistent patterns:**
+
+- 🚩 COVID samples all look different from each other
+- 🚩 Control samples all look different
+- **Interpretation**: Insufficient statistical power or high biological variability
+- **Action**: Need more samples or focus on strongest signals
+
+---
+
+### **Validation Strategy** ✅
+
+**Trust genes that:**
+
+1. **Show in ≥3 of 4 COVID patients**: Majority consensus
+2. **Low in all controls**: Clear difference
+3. **Make biological sense**: Fit COVID literature
+4. **Part of coherent pathway**: Multiple genes from same process
+
+**Be cautious of:**
+
+- Genes unique to 1-2 patients
+- Genes with contradictory patterns (some COVID high, some low)
+- Genes without biological interpretation
+
+---
+
+### **In This Dataset**:
+
+**Examine the dotplot:**
+
+- Which genes show consistent COVID upregulation (large red dots in all COVID samples)?
+- Which genes are still covid_17-specific (need further validation)?
+- Are there any genes with inconsistent patterns within groups?
+- Overall, did subsampling improve result quality?
+
+**The text notes:** "It looks much better now. But...we still have some genes dominated by a single patient."
+
+**This is expected**—perfect consistency across 4 individuals is rare. Focus on genes with majority consensus.
+:::
 
 It looks much better now. But if we look per subject you can see that we
 still have some genes that are dominated by a single patient. Still, it
@@ -764,12 +1884,14 @@ look for their combined function using hypergeometric test.
 **Gene set analysis asks: "What biological processes or pathways are enriched in my DE genes?"** Individual genes are hard to interpret, but sets of genes working together reveal biological meaning.
 
 **Example:**
+
 - **DE genes**: IFNG, STAT1, IRF1, MX1, OAS1, ISG15
 - **Individual interpretation**: "These genes are upregulated in COVID" (not very informative)
 - **Gene set interpretation**: "Interferon signaling pathway is activated in COVID" (biologically meaningful!)
 
 **Hypergeometric test logic:**
 Think of it like drawing marbles from a bag:
+
 - **Bag**: All genes in the genome (~20,000 genes)
 - **Red marbles**: Genes in a pathway (e.g., 100 interferon pathway genes)
 - **Draw**: Your DE genes (e.g., 500 genes)
@@ -779,12 +1901,14 @@ Think of it like drawing marbles from a bag:
 $$P = \frac{\binom{K}{k} \binom{N-K}{n-k}}{\binom{N}{n}}$$
 
 Where:
+
 - N = total genes
 - K = genes in pathway
 - n = DE genes
 - k = DE genes also in pathway
 
 **Interpretation:**
+
 - **Significant enrichment** (low p-value): This pathway/process is likely involved in your biological condition
 - **Multiple pathways enriched**: Reveals the biological program activated (e.g., inflammation, cell cycle, metabolism)
 :::
@@ -811,20 +1935,24 @@ print(len(glist))
 **Gene list filtering for enrichment analysis:**
 
 **`log2fc_min=0.25`**: Minimum log2 fold-change
+
 - Filters for genes with at least 1.19-fold change (2^0.25 = 1.19)
 - Removes genes that are statistically significant but biologically trivial
 - Focuses on genes with meaningful expression changes
 
 **`pval_cutoff=0.05`**: Maximum p-value
+
 - Standard significance threshold
 - Controls false positive rate
 
 **Why both filters?**
+
 - **Statistical significance (p-value)**: Is the difference real or random noise?
 - **Biological significance (fold-change)**: Is the difference large enough to matter?
 - Need both: A gene with 1.01-fold change might be statistically significant with enough cells, but biologically meaningless
 
 **List length matters:**
+
 - Too few genes (<50): Low power, miss pathways
 - Too many genes (>1000): High noise, everything is "significant"
 - Sweet spot: 100-500 genes captures major biology without noise
@@ -837,11 +1965,115 @@ enr_res.results.head()
 ```
 
 ::: {.callout-tip}
+## What to Look For in Enrichment Results Table
+
+### **Understanding the Columns** 📊
+
+**Term**: Pathway/process name (e.g., "type I interferon signaling pathway")
+
+**Overlap**: Fraction of pathway genes in your DE list
+
+- Example: "15/100" = 15 of your DE genes are in this 100-gene pathway
+
+**P-value**: Significance of enrichment (lower = more significant)
+
+**Adjusted P-value**: Corrects for testing multiple pathways (use this for interpretation)
+
+**Odds Ratio**: Strength of enrichment
+
+- >1: Enriched (more overlap than expected)
+- Higher = stronger enrichment
+
+**Combined Score**: Combines p-value and odds ratio into single metric
+
+- Higher = better
+- Used for ranking
+
+---
+
+### **Expected Results for COVID** ✅
+
+**Top enriched pathways should include:**
+
+- ✅ **Immune response pathways**:
+  - Type I interferon signaling
+  - Inflammatory response
+  - Cytokine signaling
+  - Defense response to virus
+
+- ✅ **Cell stress pathways**:
+  - Response to stress
+  - ER stress
+  - Unfolded protein response
+
+- ✅ **Apoptosis/cell death**: If severe disease
+
+**These align with known COVID biology.**
+
+---
+
+### **Interpreting Results** 🔍
+
+**Strong enrichment:**
+
+- Adjusted p-value < 0.01
+- Overlap >10% of pathway genes
+- Combined score >10
+- **Interpretation**: Core biological process in your condition
+
+**Moderate enrichment:**
+
+- Adjusted p-value < 0.05
+- Overlap 5-10%
+- **Interpretation**: Likely involved, but not dominant
+
+**Weak enrichment:**
+
+- Adjusted p-value > 0.05
+- Small overlap
+- **Interpretation**: May be noise or very subtle effect
+
+---
+
+### **Red Flags** 🚩
+
+**Unexpected pathways:**
+
+- 🚩 "Cell cycle" enriched in non-dividing cells = doublets or mis-annotation
+- 🚩 "Ribosomal biogenesis" enriched = technical artifact
+- 🚩 Completely unrelated pathways = noisy DE genes
+
+**No significant enrichment:**
+
+- 🚩 No pathways pass threshold = 
+  - DE genes are random noise
+  - Or very novel biology not in databases
+  - Or insufficient DE genes
+
+**Only generic pathways:**
+
+- 🚩 "Metabolic process", "gene expression" = not informative
+- Need more specific pathways
+
+---
+
+### **In This Dataset**:
+
+**Check the enrichment table:**
+
+- Are interferon/immune pathways at the top?
+- Do enriched pathways make sense for COVID-19?
+- What is the adjusted p-value cutoff for significance?
+- How many pathway genes overlap with your DE genes?
+:::
+
+::: {.callout-tip}
 ## Biological Relevance
 
 **Common gene set databases:**
 
 **Gene Ontology (GO):**
+
 - **Biological Process**: What the genes do (e.g., "immune response", "cell division")
 - **Cellular Component**: Where they act (e.g., "mitochondrion", "nucleus")
 - **Molecular Function**: Their biochemical activity (e.g., "kinase activity", "DNA binding")
@@ -855,6 +2087,7 @@ enr_res.results.head()
 **MSigDB Hallmarks**: 50 well-defined biological states (e.g., "Inflammatory response", "Hypoxia")
 
 **Which to use?**
+
 - **Broad overview**: GO Biological Process, MSigDB Hallmarks
 - **Specific pathways**: KEGG, Reactome, WikiPathways
 - **Best practice**: Try multiple databases, look for consistent themes
@@ -875,6 +2108,92 @@ You can visualize your results using a simple barplot, for example:
 gseapy.barplot(enr_res.res2d,title='GO_Biological_Process_2025')
 ```
 
+::: {.callout-tip}
+## What to Look For in Enrichment Barplot
+
+### **Reading the Barplot** 📊
+
+**X-axis**: Enrichment score (combined score or -log10(p-value))
+
+**Y-axis**: Pathway names
+
+**Bar length**: Strength of enrichment (longer = more significant)
+
+**Expected pattern:**
+
+- ✅ **Top pathways**: Biologically relevant to your condition
+- ✅ **Descending order**: Most significant at top
+- ✅ **Clear separation**: Top pathways much stronger than bottom
+
+---
+
+### **For COVID-19, Expect** ✅
+
+**Top enriched processes:**
+
+1. **Viral defense**: "defense response to virus", "response to virus"
+2. **Interferon signaling**: "type I interferon signaling pathway", "cellular response to interferon"
+3. **Inflammatory response**: "inflammatory response", "cytokine-mediated signaling"
+4. **Immune activation**: "immune system process", "leukocyte activation"
+
+**These align with COVID pathophysiology.**
+
+---
+
+### **Red Flags** 🚩
+
+**Unexpected top pathways:**
+
+- 🚩 "Cell cycle", "DNA replication" in non-dividing cells = doublets
+- 🚩 "Translation", "ribosome biogenesis" = technical artifacts
+- 🚩 Completely unrelated processes = noisy input genes
+
+**Only generic terms:**
+
+- 🚩 "Biological process", "cellular process" = not informative
+- Need more specific pathways
+- May need stricter DE gene filtering
+
+**No coherent theme:**
+
+- 🚩 Top 10 pathways are completely unrelated = 
+  - Noisy DE gene list
+  - Or very complex/novel biology
+
+---
+
+### **Biological Interpretation** 💡
+
+**Coherent pathway enrichment suggests:**
+
+- DE gene list is biologically meaningful
+- Cells are responding in coordinated way
+- Can summarize findings: "COVID monocytes show activation of interferon and inflammatory pathways"
+
+**Multiple related pathways:**
+
+- Shows robustness (not driven by a few genes)
+- Example: Multiple interferon-related terms = strong interferon signature
+
+---
+
+### **In This Dataset**:
+
+**Check the barplot:**
+
+- What are the top 3-5 processes?
+- Do they make sense for COVID-19 immune response?
+- Are they coherent (related to each other)?
+- Can you summarize the biological theme?
+
+**Expected COVID signatures:**
+
+- Interferon response (viral defense)
+- Inflammation (disease pathology)
+- Immune cell activation
+- Possible cell stress/death pathways
+:::
+
 ## Gene Set Enrichment Analysis (GSEA)
 
 Besides the enrichment using hypergeometric test, we can also perform
@@ -889,21 +2208,25 @@ among the downregulated genes or not differentially regulated.
 **GSEA differs from hypergeometric enrichment in a fundamental way:**
 
 **Hypergeometric (over-representation) analysis:**
+
 - Uses a **binary gene list**: significant vs. non-significant (cutoff-based)
 - Question: "Are pathway genes over-represented in my significant genes?"
 - Problem: Arbitrary cutoff (why p<0.05 and not p<0.1?)—genes just below cutoff are ignored
 
 **GSEA (gene set enrichment analysis):**
+
 - Uses a **ranked gene list**: all genes ordered by fold-change (no cutoff)
 - Question: "Are pathway genes clustered at the top or bottom of my ranked list?"
 - Advantage: Uses information from ALL genes, not just those passing a threshold
 
 **Visual analogy:**
 Imagine students ranked by test scores:
+
 - **Hypergeometric**: Are honor students (>90%) over-represented in the chess club?
 - **GSEA**: Are chess club members clustered toward the top of the ranked list?
 
 **GSEA enrichment score:**
+
 - Walk down the ranked gene list
 - Increase score when you hit a pathway gene
 - Decrease score when you miss
@@ -911,6 +2234,7 @@ Imagine students ranked by test scores:
 - **Permutation test** determines if this peak is significant
 
 **When to use which?**
+
 - **Hypergeometric**: Clear cutoff, well-defined gene set
 - **GSEA**: Want to use all expression data, avoid arbitrary cutoffs, detect subtle coordinated changes
 :::
@@ -925,21 +2249,25 @@ noise, so also filter for expression in enough cells.
 **Why filter for expression in enough cells?**
 
 **The problem:**
+
 - A gene expressed in 2 cells in COVID and 0 cells in control has **infinite fold-change**
 - But this is **biologically meaningless** and **statistically unreliable**
 - Lowly expressed genes have high variance and contribute noise
 
 **The filter (`n_cells_by_counts > 30`):**
+
 - Only include genes expressed in at least 30 cells
 - Ensures robust estimates of expression
 - Reduces noise from dropout effects (technical zeros)
 
 **Effect on ranking:**
+
 - Removes unstable genes with extreme fold-changes based on few cells
 - Focuses on genes with reliable expression estimates
 - Improves GSEA signal-to-noise ratio
 
 **The 30-cell threshold:**
+
 - Arbitrary but reasonable for a ~300-cell dataset
 - Could adjust based on dataset size and clustering resolution
 - Balance: Too strict loses rare cell type markers; too loose includes noise
@@ -958,6 +2286,73 @@ gene_rank = gene_rank[gene_rank['names'].isin(cl1.var_names[cl1.var.n_cells_by_c
 
 gene_rank
 ```
+
+::: {.callout-tip}
+## What to Look For in Ranked Gene List
+
+### **Understanding the Ranking** 📋
+
+**Expected structure:**
+
+- ✅ **Top genes**: Highest log fold-changes (most upregulated in COVID)
+- ✅ **Bottom genes**: Most negative log fold-changes (most downregulated in COVID)
+- ✅ **Middle genes**: Small or no fold-changes
+- ✅ **Continuous ranking**: Smooth transition from top to bottom
+
+**Good ranked list:**
+
+- Thousands of genes included (all expressed genes)
+- Wide range of fold-changes (-3 to +3 or more)
+- Top genes biologically interpretable
+
+---
+
+### **Quality Checks** 🔍
+
+**Top of list (upregulated in COVID):**
+
+- ✅ Should include immune/inflammatory genes
+- ✅ Fold-changes >1 (at least 2-fold change)
+- ✅ Recognizable biology
+
+**Bottom of list (downregulated in COVID):**
+
+- ✅ Homeostatic function genes
+- ✅ Negative fold-changes
+- ✅ Makes sense for suppressed functions
+
+**Middle of list:**
+
+- Genes with small/negligible changes
+- Not differentially expressed but included for GSEA
+
+---
+
+### **Red Flags** 🚩
+
+**Extreme fold-changes (>10):**
+
+- 🚩 May be artifacts from lowly expressed genes
+- Check if filtering (`n_cells > 30`) was effective
+
+**No clear top genes:**
+
+- 🚩 All fold-changes near zero = no differential expression
+- Indicates no COVID effect in this cluster
+
+**Housekeeping genes at top:**
+
+- 🚩 ACTB, GAPDH with high fold-changes = normalization failure
+
+---
+
+### **In This Dataset**:
+
+- What are the top 10 upregulated genes?
+- What are the top 10 downregulated genes?
+- Do they make biological sense for COVID?
+- What's the range of fold-changes?
+:::
 
 Once our list of genes is sorted, we can proceed with the enrichment
 itself. We can use the package to get gene sets from the Molecular
@@ -981,21 +2376,25 @@ either `p-value` or normalized enrichment score (`NES`).
 **GSEA key outputs:**
 
 **Normalized Enrichment Score (NES):**
+
 - **Positive NES**: Pathway is enriched in **upregulated genes** (top of ranked list)
 - **Negative NES**: Pathway is enriched in **downregulated genes** (bottom of ranked list)
 - **Magnitude**: Strength of enrichment (|NES| > 1.5 is typically considered meaningful)
 
 **P-value and FDR:**
+
 - Calculated by permutation test (randomly shuffle gene labels, recalculate enrichment)
 - FDR (False Discovery Rate): Corrects for multiple testing
 - FDR < 0.25 is often considered significant (more lenient than typical 0.05 for exploratory GSEA)
 
 **Leading edge genes:**
+
 - Core genes driving the enrichment signal
 - Genes appearing before the peak enrichment score
 - These are the key genes in the pathway responding to your condition
 
 **Example interpretation:**
+
 - "Interferon signaling" with NES = +2.5, FDR = 0.001
   - Interferon pathway genes are strongly enriched among COVID-upregulated genes
   - This is highly significant
@@ -1016,34 +2415,150 @@ gseapy.gseaplot(rank_metric=res.ranking, term=terms[0], **res.results[terms[0]])
 ```
 
 ::: {.callout-tip}
-## Biological Relevance
+## What to Look For in GSEA Enrichment Plot
 
-**How to read a GSEA enrichment plot:**
+### **Understanding the Three Panels** 📊
 
-**Top panel (Enrichment Score):**
-- **X-axis**: Genes ranked by fold-change (left = upregulated, right = downregulated)
+**Top Panel: Enrichment Score (ES) Profile**
+
+**Components:**
+
+- **X-axis**: Gene rank position (left = upregulated, right = downregulated)
 - **Y-axis**: Running enrichment score
-- **Peak**: Maximum enrichment (positive = enriched in upregulated genes, negative = enriched in downregulated genes)
-- **Green curve**: How the enrichment score changes as you walk through the ranked gene list
+- **Green line**: How ES changes as you walk through ranked genes
+- **Peak**: Maximum (or minimum) ES = enrichment score
 
-**Middle panel (Gene hits):**
-- **Black bars**: Where pathway genes appear in the ranked list
-- **Clustering at left**: Pathway enriched in upregulated genes
-- **Clustering at right**: Pathway enriched in downregulated genes
-- **Spread throughout**: No enrichment
+**Positive enrichment (peak above zero):**
 
-**Bottom panel (Ranked list metric):**
-- **X-axis**: Gene rank position
-- **Y-axis**: Ranking metric (log fold-change)
-- **Red**: Upregulated in COVID
-- **Blue**: Downregulated in COVID
-- Shows how expression changes across the full gene list
+- ✅ Pathway genes cluster at **LEFT** (upregulated in COVID)
+- Peak early in the plot
+- **Interpretation**: Pathway is activated/upregulated
 
-**Example interpretation:**
-If you see black bars clustered on the left with a positive peak:
-- This pathway's genes are predominantly upregulated in COVID
-- The pathway is activated in the disease state
-- Leading edge genes (those before the peak) are the core drivers
+**Negative enrichment (trough below zero):**
+
+- ✅ Pathway genes cluster at **RIGHT** (downregulated in COVID)
+- Trough late in the plot
+- **Interpretation**: Pathway is suppressed/downregulated
+
+**No enrichment:**
+
+- Line stays near zero throughout
+- No clear peak or trough
+- **Interpretation**: Pathway genes randomly distributed
+
+---
+
+**Middle Panel: Gene Hits**
+
+**Black vertical bars** show where pathway genes appear in ranked list
+
+**Strong enrichment patterns:**
+
+- ✅ **Many bars clustered at left**: Pathway upregulated
+- ✅ **Many bars clustered at right**: Pathway downregulated
+- ✅ **Dense clustering**: Core genes tightly grouped
+
+**Poor enrichment:**
+
+- 🚩 **Bars evenly spread**: No clustering = no enrichment
+- 🚩 **Very few bars**: Pathway has few genes in dataset
+
+---
+
+**Bottom Panel: Ranked List Metric**
+
+**Shows the actual ranking metric** (log fold-change)
+
+- **Red region** (left): Upregulated genes in COVID
+- **Blue region** (right): Downregulated genes in COVID
+- **Gradient**: Transition from up to down
+
+**Helps interpret:**
+
+- How strong are the fold-changes?
+- Where does the transition happen?
+
+---
+
+### **Interpreting Significance** ✅
+
+**Highly significant pathway:**
+
+- **NES**: >2.0 or <-2.0
+- **FDR q-value**: <0.05
+- **Many leading edge genes**: Core genes driving signal
+- **Steep ES curve**: Strong coordinated expression
+
+**Moderately significant:**
+
+- **NES**: 1.5-2.0
+- **FDR**: 0.05-0.25
+- Still meaningful but less robust
+
+**Not significant:**
+
+- **FDR**: >0.25
+- May be noise or very subtle effect
+
+---
+
+### **Common Patterns** 🔍
+
+**Scenario 1: Immune pathway upregulated in COVID**
+
+- Peak in **left region** (positive NES)
+- Black bars clustered at **left**
+- Red region of ranked metric
+- **Interpretation**: Immune response activated
+
+**Scenario 2: Metabolic pathway downregulated**
+
+- Trough in **right region** (negative NES)
+- Black bars clustered at **right**
+- Blue region of ranked metric
+- **Interpretation**: Metabolism suppressed
+
+**Scenario 3: No enrichment**
+
+- ES line wavers around zero
+- Black bars scattered throughout
+- **Interpretation**: Pathway not involved
+
+---
+
+### **Leading Edge Genes** 💡
+
+**The genes before the peak** are most important:
+
+- These drive the enrichment signal
+- Core members of the pathway responding to COVID
+- Focus follow-up validation on these genes
+
+**Example:**
+
+- If "Interferon signaling" is enriched
+- Leading edge might include: ISG15, MX1, IFIT1, OAS1
+- **These are the key interferon genes upregulated in your cells**
+
+---
+
+### **In This Dataset**:
+
+**Check the GSEA plot for the top pathway (terms[0]):**
+
+- Is the enrichment score positive (upregulated) or negative (downregulated)?
+- Are the black bars (pathway genes) clustered at one end?
+- What is the NES and FDR q-value?
+- Does this pathway make biological sense for COVID-19?
+- Which genes are in the leading edge (hover or check output table)?
+
+**Replicate for other pathways:**
+
+```python
+# Plot additional enriched pathways
+gseapy.gseaplot(rank_metric=res.ranking, term=terms[1], **res.results[terms[1]])
+gseapy.gseaplot(rank_metric=res.ranking, term=terms[2], **res.results[terms[2]])
+```
 :::
 
 ::: {.callout-important}
@@ -1054,10 +2569,13 @@ If you see black bars clustered on the left with a positive peak:
 - Change the pathway source to another gene set (e.g., `CP:WIKIPATHWAYS` or `CP:REACTOME` or `CP:BIOCARTA` or `GO:BP`) and check if you get similar results?
 
 **Questions to consider:**
+
 - Do the enriched pathways make biological sense for COVID-19?
 - Are interferon/immune pathways enriched?
 - Do results differ between GO and KEGG?
 - Are there unexpected pathways that might reveal novel biology?
+- Are results consistent across different databases (validates findings)?
+- What biological story emerges from combining DE genes + pathway enrichment?
 :::
 
 Finally, let's save the integrated data for further analysis.

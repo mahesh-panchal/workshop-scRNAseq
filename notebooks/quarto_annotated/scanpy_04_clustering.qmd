@@ -73,11 +73,13 @@ steps:
 **Clustering identifies cell types and states by grouping cells with similar gene expression.** Think of it like organizing a diverse crowd of people into groups based on their clothing—people wearing lab coats cluster together (scientists), people in scrubs cluster together (healthcare workers), and so on.
 
 In single-cell analysis:
+
 - **Each cluster ideally represents a distinct cell type or cell state** (e.g., CD4+ T cells, CD8+ T cells, monocytes, B cells)
 - Cells cluster together because they express similar sets of genes that define their identity and function
 - The number and resolution of clusters depends on biological heterogeneity and your analytical choices
 
 **Why clustering matters:**
+
 - Enables identification of rare cell populations
 - Reveals disease-associated cell states (e.g., activated immune cells in COVID-19)
 - Allows cell-type-specific analyses (differential expression, trajectory inference)
@@ -97,16 +99,19 @@ In single-cell analysis:
 **The graph-based approach:**
 
 **Step 1: Build kNN graph**
+
 - For each cell, find its k most similar cells (neighbors) based on distance in PCA/integrated space
 - Create edges connecting each cell to its neighbors
 - Edge weights reflect similarity (closer cells = stronger edges)
 
 **Step 2: Community detection**
+
 - Apply algorithms (Leiden, Louvain) that partition the graph into "communities"
 - Communities are groups of nodes (cells) with dense internal connections and sparse external connections
 - This identifies natural groupings in the data
 
 **Step 3: Optimize modularity**
+
 - Modularity measures how well-separated the communities are
 - Higher modularity = better-defined clusters
 :::
@@ -130,18 +135,21 @@ previous lab.
 **Key parameters for neighbor graph construction:**
 
 **`n_neighbors` (20)**:
+
 - Controls local vs. global structure
 - Higher values (50-100): Broader, more connected clusters
 - Lower values (5-15): Tighter, more granular clusters
 - Default of 15-30 works well for most datasets
 
 **`n_pcs` (30)**:
+
 - How many principal components to use for distance calculations
 - More PCs: Captures subtle biological variation (and potentially noise)
 - Fewer PCs: Focuses on major sources of variation
 - 20-50 is typical; based on elbow plot from PCA
 
 **`use_rep='X_pca_harmony'`**:
+
 - Uses the batch-corrected Harmony embedding instead of raw PCA
 - Ensures clustering is based on integrated data where batch effects are minimized
 - Critical for fair clustering across experimental batches
@@ -168,22 +176,26 @@ maintained, using Leiden is recommended by the Scanpy community.
 **The Leiden algorithm optimizes modularity to find communities in the neighbor graph:**
 
 **How it works:**
+
 1. **Initialize**: Each cell starts in its own cluster
 2. **Local moves**: Iteratively move cells between clusters to increase modularity
 3. **Refinement**: Recursively partition clusters to escape local optima
 4. **Aggregation**: Merge similar clusters
 
 **Resolution parameter**: Controls cluster granularity
+
 - **Low resolution (0.4)**: Fewer, larger clusters (broad cell types)
 - **Default (1.0)**: Moderate number of clusters
 - **High resolution (1.4+)**: Many small clusters (cell subtypes and states)
 
 **Why try multiple resolutions?**
+
 - Biological organization is hierarchical (e.g., "immune cells" → "T cells" → "CD4+ T cells" → "regulatory T cells")
 - Different resolutions reveal different levels of this hierarchy
 - No single "correct" resolution—depends on your biological question
 
 **Leiden vs. Louvain:**
+
 - Leiden is guaranteed to find well-connected communities (Louvain sometimes creates poorly connected clusters)
 - Leiden is faster and more consistent
 - Leiden is actively maintained
@@ -206,6 +218,127 @@ higher granularity in the clustering.
 sc.pl.umap(adata, color=['leiden_0.4', 'leiden_0.6', 'leiden_1.0','leiden_1.4'], legend_fontsize=8)
 ```
 
+::: {.callout-tip}
+## What to Look For in Leiden Clustering Results
+
+### **Resolution Effects** ✅
+
+**leiden_0.4 (Low resolution):**
+
+- **Fewer clusters** (typically 5-10)
+- Captures **major cell lineages** (T cells, B cells, myeloid cells)
+- Broad categories, some heterogeneity within clusters
+- Good for: Initial overview, comparing major populations
+
+**leiden_0.6 (Medium resolution):**
+
+- **Moderate number of clusters** (typically 8-15)
+- Separates **cell types** (CD4+ T, CD8+ T, monocytes, B cells)
+- Balanced granularity for most analyses
+- Good for: Cell type annotation, differential expression
+
+**leiden_1.0 (Default resolution):**
+
+- **More clusters** (typically 12-20)
+- Begins to separate **cell subtypes** (classical vs. non-classical monocytes)
+- May split some homogeneous populations
+- Good for: Detailed cell type characterization
+
+**leiden_1.4 (High resolution):**
+
+- **Many clusters** (typically 15-30+)
+- Captures **cell states** (activated vs. resting, stressed cells)
+- Risk of over-clustering (splitting true populations)
+- Good for: Finding rare populations, subclustering
+
+---
+
+### **Quality Indicators** ✅
+
+**Good clustering:**
+
+- **Spatially coherent**: Cells in same cluster are close together on UMAP
+- **Consistent across resolutions**: Major clusters persist, with subdivisions at higher resolution
+- **Biologically interpretable**: Clusters correspond to known cell types when checking marker genes
+- **Mixed batches**: Samples intermingle within clusters (if integration worked)
+
+**Visual cues:**
+
+- Clusters form **contiguous regions** on UMAP
+- Increasing resolution **subdivides** existing clusters rather than creating new scattered groups
+- No "salt and pepper" pattern (individual cells randomly assigned)
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Over-clustering:**
+
+- 🚩 Many tiny clusters (<20 cells each)
+- 🚩 Clusters differ only by technical factors (UMI count, sample)
+- 🚩 No clear marker genes distinguish clusters
+- **Action**: Lower resolution
+
+**Under-clustering:**
+
+- 🚩 Very few clusters that are clearly heterogeneous
+- 🚩 Multiple cell types forced into same cluster
+- 🚩 Wide spread of cells within cluster on UMAP
+- **Action**: Increase resolution or check integration quality
+
+**Fragmented clusters:**
+
+- 🚩 Same biological cell type split across multiple distant clusters
+- 🚩 Inconsistent between resolutions (clusters appear/disappear randomly)
+- **Action**: Check integration, try different n_neighbors
+
+**Batch-driven clusters:**
+
+- 🚩 Clusters defined by sample rather than cell type
+- 🚩 One sample dominates a cluster
+- **Action**: Improve integration or check if biologically meaningful
+
+---
+
+### **Choosing Resolution** 🎯
+
+**Use low resolution (0.4-0.6) when:**
+
+- You want major cell type categories
+- Dataset has high heterogeneity (many tissue types)
+- Performing initial exploration
+
+**Use medium resolution (0.6-1.0) when:**
+
+- You want to separate cell types and major subtypes
+- Performing cell type annotation
+- Most common choice for general analysis
+
+**Use high resolution (1.0-1.4+) when:**
+
+- Looking for rare cell populations
+- Studying cell state transitions
+- Performing subclustering of specific lineages
+- Need fine-grained resolution
+
+**Multiple resolutions:**
+
+- Use hierarchical approach: annotate broad types at low resolution, then subcluster at high resolution
+- Compare consistency across resolutions
+- Report results at biologically meaningful resolution
+
+---
+
+### **In This Dataset**:
+
+**Compare the four resolutions:**
+
+- Do major immune cell types (T, B, myeloid) separate clearly even at low resolution?
+- At what resolution do CD4+ and CD8+ T cells separate?
+- Does high resolution reveal COVID-specific activated states?
+- Are any clusters split inappropriately at high resolution?
+:::
+
 Once we have done clustering, the relationships between clusters can be
 calculated as correlation in PCA space and we also visualize some of the
 marker genes that we used in the Dim Reduction lab onto the clusters. If
@@ -218,17 +351,20 @@ the dotplot.
 **Dendrograms show hierarchical relationships between clusters**, similar to a family tree. Closely related clusters branch together, while distantly related clusters branch separately.
 
 For immune cells:
+
 - T cell clusters (CD4+, CD8+, regulatory T cells) branch together
 - Monocyte subtypes branch together
 - B cells form a separate branch
 
 This hierarchical view helps you:
+
 - Understand developmental relationships (e.g., stem cells → progenitors → mature cells)
 - Identify major cell lineages
 - Validate that your clustering makes biological sense
 - Decide whether to merge over-split clusters
 
 **Dot plots efficiently display marker gene expression across clusters:**
+
 - **Dot size**: Percentage of cells in the cluster expressing the gene
 - **Dot color**: Average expression level in expressing cells
 - Quickly identify which genes define which clusters
@@ -242,6 +378,138 @@ sc.pl.dendrogram(adata, groupby = "leiden_0.6")
 genes  = ["CD3E", "CD4", "CD8A", "GNLY","NKG7", "MS4A1","FCGR3A","CD14","LYZ","CST3","MS4A7","FCGR1A"]
 sc.pl.dotplot(adata, genes, groupby='leiden_0.6', dendrogram=True)
 ```
+
+::: {.callout-tip}
+## What to Look For in Dendrogram and Dotplot
+
+### **Dendrogram Interpretation** ✅
+
+**Good hierarchical structure:**
+
+- **Biologically related clusters branch together**
+  - Example: Clusters 1, 2, 4 (all T cells) should be near each other
+  - Monocyte subtypes should cluster together
+  - B cells separate from T and myeloid lineages
+
+**Branch lengths indicate similarity:**
+
+- **Short branches**: Very similar clusters (may be over-clustered)
+- **Long branches**: Distinct populations
+- **Balanced tree**: Good range of cell type diversity
+
+---
+
+### **Dotplot Interpretation** ✅
+
+**Understanding the visualization:**
+
+- **Rows**: Clusters (ordered by dendrogram)
+- **Columns**: Marker genes
+- **Dot size**: % of cells in cluster expressing the gene (bigger = more prevalent)
+- **Dot color**: Mean expression level (red/yellow = high, blue/purple = low)
+
+**Expected patterns:**
+
+**T cell markers (CD3E, CD4, CD8A):**
+
+- CD3E: Large dots across multiple clusters (all T cells)
+- CD4: Large dots in CD4+ T cell clusters only
+- CD8A: Large dots in CD8+ T cell clusters only
+- **Mutual exclusivity**: CD4 and CD8A shouldn't both be high in same cluster
+
+**NK cell markers (GNLY, NKG7):**
+
+- High in NK cell clusters
+- May overlap partially with CD8+ T cells (some cytotoxic T cells express these)
+
+**B cell markers (MS4A1):**
+
+- Should be specific to B cell cluster(s)
+- Large, bright dots in 1-2 clusters
+- Absent in T and myeloid clusters
+
+**Monocyte markers (CD14, LYZ, CST3, MS4A7, FCGR3A, FCGR1A):**
+
+- **CD14 + LYZ + CST3**: Classical monocytes
+- **FCGR3A + CST3**: Non-classical monocytes
+- **FCGR1A**: Monocyte/DC marker
+
+---
+
+### **Quality Checks** 🔍
+
+**Good marker expression patterns:**
+
+- ✅ **Specificity**: Markers high in expected clusters, low elsewhere
+- ✅ **Complementarity**: Different clusters have different marker combinations
+- ✅ **Consistency**: Dendrogram groups match marker gene patterns
+  - T cell clusters branch together AND express CD3E
+  - Monocyte subtypes branch together AND express myeloid markers
+
+**Validation of clustering:**
+
+- Do dendrogram branches match known biology?
+- Are marker genes specific or broadly expressed?
+- Do closely related clusters share some markers but differ in others?
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Poor marker specificity:**
+
+- 🚩 Marker expressed equally across all clusters = not a good marker
+- 🚩 Expected markers missing from expected cluster = annotation error or poor clustering
+
+**Dendrogram mismatch:**
+
+- 🚩 T cell cluster branches with monocytes = batch effect or poor integration
+- 🚩 Two similar subtypes far apart on tree = over-clustering
+
+**Conflicting markers:**
+
+- 🚩 CD4 and CD8A both high in same cluster = doublets or data quality issue
+- 🚩 T cell cluster lacks CD3E = not actually T cells
+
+**Uniform expression:**
+
+- 🚩 All genes show similar dot sizes across clusters = poor gene selection or normalization issue
+- 🚩 No cluster-specific patterns = need better markers
+
+---
+
+### **Using Dotplot for Annotation** 💡
+
+**Identify cell types:**
+
+1. **Find marker combinations**:
+   - CD3E+ CD4+ → CD4+ T cells
+   - CD3E+ CD8A+ → CD8+ T cells
+   - MS4A1+ → B cells
+   - CD14+ LYZ+ → Classical monocytes
+   - FCGR3A+ → Non-classical monocytes/NK cells
+
+2. **Check dendrogram**:
+   - Do annotated T cells cluster together?
+   - Are monocyte subtypes adjacent?
+
+3. **Validate**:
+   - Plot additional markers if needed
+   - Check for unexpected expression patterns
+
+---
+
+### **In This Dataset**:
+
+**Check the dotplot:**
+
+- Which clusters are T cells? (CD3E+)
+- Which are CD4+ vs. CD8+ T cells?
+- Which are monocytes? (CD14+/LYZ+ or FCGR3A+)
+- Which are B cells? (MS4A1+)
+- Do the dendrogram branches make biological sense?
+- Are there any clusters without clear markers (potential doublets or unknown cell types)?
+:::
 
 ## K-means clustering
 
@@ -260,16 +528,19 @@ starting configurations (via the `nstart` argument).
 **K-means is an alternative clustering approach that works differently from graph-based methods.** Imagine organizing people in a room by having them gather around designated "center points"—everyone moves to their nearest center, then the centers shift to the middle of each group, and the process repeats until stable.
 
 **K-means characteristics:**
+
 - **Assumes spherical clusters**: Each cluster is roughly circular/spherical in shape
 - **Pre-defined number of clusters**: You must specify k (number of clusters) in advance
 - **Distance-based**: Assigns cells to the nearest cluster center (centroid)
 
 **Advantages:**
+
 - Simple and fast
 - Deterministic results (with same initialization)
 - Works well when clusters are roughly equal-sized and spherical
 
 **Disadvantages for single-cell data:**
+
 - Biological cell populations are rarely spherical in gene expression space
 - Difficult to choose k without prior knowledge
 - Sensitive to outliers and batch effects
@@ -287,12 +558,14 @@ starting configurations (via the `nstart` argument).
 4. **Iterate**: Repeat assignment and update until convergence
 
 **Implementation details:**
+
 - Applied to `X_pca_harmony` (30-dimensional batch-corrected space)
 - `random_state=0` ensures reproducibility
 - We try k=5, 10, and 15 to see how the number of clusters affects results
 - Results stored as categorical variables in `adata.obs`
 
 **Comparing to Leiden:**
+
 - K-means may split coherent cell populations or merge distinct types
 - Leiden adapts to the data structure; k-means imposes structure
 - Graph-based methods generally perform better for scRNA-seq
@@ -323,6 +596,101 @@ sc.pl.umap(adata, color=['kmeans5', 'kmeans10', 'kmeans15'])
 adata.obsm
 ```
 
+::: {.callout-tip}
+## What to Look For in K-means Clustering Results
+
+### **Comparing K-means to Leiden** ✅
+
+**Expected differences:**
+
+- **K-means clusters are more "blobby"**: Tend to be circular/spherical on UMAP
+- **Leiden clusters follow UMAP topology**: Adapt to the actual data structure
+- **K-means may split natural groups**: Forces equal-sized, spherical partitions
+- **Leiden may find elongated clusters**: Follows biological trajectories/gradients
+
+---
+
+### **K-means Specific Patterns** 🔍
+
+**K=5 (Few clusters):**
+
+- Should separate major lineages (T, B, myeloid)
+- May merge cell subtypes inappropriately
+- Clusters often unequal sizes (some very large, some small)
+
+**K=10 (Medium):**
+
+- Closer to biological cell types
+- Still may inappropriately split or merge
+- Compare to Leiden 0.6 results
+
+**K=15 (Many clusters):**
+
+- May over-split natural populations
+- Clusters become increasingly arbitrary
+- Some very small clusters appear
+
+---
+
+### **Quality Assessment** 🔍
+
+**K-means works well when:**
+
+- ✅ Clusters are roughly spherical on UMAP
+- ✅ Results similar to Leiden (validates both methods)
+- ✅ Major cell types cleanly separated
+
+**K-means performs poorly when:**
+
+- 🚩 Elongated or irregular cell populations split across multiple clusters
+- 🚩 Very different from Leiden results
+- 🚩 Clusters don't correspond to biological cell types
+- 🚩 Extreme size imbalances (one cluster with 80% of cells)
+
+**Red flags:**
+
+- 🚩 **Cluster boundaries cut through dense regions**: K-means forced circular boundary through a continuous population
+- 🚩 **Rare populations not detected**: K-means may merge rare cells into nearest large cluster
+- 🚩 **Batch effects visible**: Samples segregate within "clusters"
+
+---
+
+### **Choosing K** 🤔
+
+**How to decide number of clusters:**
+
+- **Elbow method**: Plot within-cluster sum of squares vs. k, look for "elbow"
+- **Silhouette score**: Measure how well cells fit their assigned cluster
+- **Biological knowledge**: Expected number of cell types
+- **Compare to graph-based**: Match k to number of Leiden clusters
+
+**In practice for scRNA-seq:**
+
+- K-means requires you to specify k **before** seeing results
+- Graph-based methods (Leiden) are data-driven and more flexible
+- **Recommendation**: Use Leiden for primary analysis, K-means as validation
+
+---
+
+### **In This Dataset**:
+
+**Compare K-means to Leiden:**
+
+- Do K=10 and Leiden 0.6 give similar results?
+- Are any natural cell populations split by K-means?
+- Do K-means clusters have clear marker genes?
+- Which method better captures biological cell types?
+
+**K-means is useful for:**
+
+- Validating graph-based clustering
+- Quick initial exploration
+- Situations where spherical clusters are appropriate
+- Comparing to historical analyses using K-means
+
+**But Leiden is generally better for scRNA-seq due to complex, non-spherical cell population structures.**
+:::
+
 ## Hierarchical clustering
 
 Hierarchical clustering is another generic form of clustering that can
@@ -342,17 +710,20 @@ these steps:
 **Hierarchical clustering creates a tree (dendrogram) showing nested relationships between cells.** Think of it like a biological taxonomy: Kingdom → Phylum → Class → Order → Family → Genus → Species.
 
 In single-cell data:
+
 - **Broad branches**: Major cell lineages (myeloid vs. lymphoid)
 - **Finer branches**: Cell types (monocytes vs. dendritic cells)
 - **Terminal branches**: Cell states or subtypes
 
 **Advantages:**
+
 - Reveals hierarchical biological organization
 - No need to pre-specify number of clusters
 - Can "cut" the tree at any level to get different resolutions
 - The dendrogram itself is informative about cell relationships
 
 **Disadvantages:**
+
 - Computationally intensive for large datasets
 - Greedy algorithm: early mistakes can't be corrected
 - Sensitive to distance metric and linkage method choices
@@ -390,18 +761,21 @@ calculated in PCA space.
 **Agglomerative (bottom-up) hierarchical clustering:**
 
 **Algorithm:**
+
 1. **Start**: Each cell is its own cluster (n clusters)
 2. **Merge**: Find the two closest clusters and merge them
 3. **Repeat**: Continue merging until only k clusters remain
 4. **Result**: A dendrogram showing the merge history
 
 **Linkage methods** define "distance between clusters":
+
 - **Single**: Minimum distance between any two points
 - **Complete**: Maximum distance between any two points
 - **Average**: Mean distance between all pairs of points
 - **Ward**: Minimizes within-cluster variance (most common for scRNA-seq)
 
 **Ward linkage:**
+
 - Merges clusters that minimize the increase in total within-cluster variance
 - Tends to create compact, roughly equal-sized clusters
 - Works only with Euclidean distance
@@ -426,6 +800,118 @@ adata.obs['hclust_15'] = cluster.fit_predict(X_pca).astype(str)
 sc.pl.umap(adata, color=['hclust_5', 'hclust_10', 'hclust_15'])
 ```
 
+::: {.callout-tip}
+## What to Look For in Hierarchical Clustering Results
+
+### **Hierarchical Clustering Characteristics** ✅
+
+**Expected patterns:**
+
+- **Nested structure**: Higher k subdivides clusters from lower k
+- **Hierarchical relationships**: Related cell types grouped at lower k, split at higher k
+- **Spatial coherence**: Clusters should be contiguous on UMAP
+
+**Comparison to other methods:**
+
+- Should largely agree with Leiden and K-means on major cell types
+- May differ in細 細 details (cluster boundaries)
+- Ward linkage often produces more balanced cluster sizes
+
+---
+
+### **Quality Indicators** 🔍
+
+**Good hierarchical clustering:**
+
+- ✅ **Biological hierarchy preserved**: T cell subtypes split from main T cluster as k increases
+- ✅ **Consistent with dendrogram**: Clusters that merge first are similar biologically
+- ✅ **Spatially coherent**: No scattered fragments
+
+**Expected progression with increasing k:**
+
+- **k=5**: Major lineages (T, B, myeloid, NK)
+- **k=10**: Cell types (CD4+ T, CD8+ T, classical mono, non-classical mono, B, NK)
+- **k=15**: Subtypes (naive vs. memory T, activated vs. resting)
+
+---
+
+### **Comparing Methods** 🔍
+
+**All three methods (Leiden, K-means, Hierarchical) should:**
+
+- Agree on major cell populations
+- Separate T cells from monocytes from B cells
+- Show similar spatial distribution on UMAP
+
+**Method-specific differences:**
+
+**Leiden:**
+
+- Most flexible, adapts to data structure
+- Can find irregular-shaped clusters
+- Resolution parameter easy to tune
+
+**K-means:**
+
+- Forces spherical clusters
+- May split elongated populations
+- Simple and fast
+
+**Hierarchical:**
+
+- Shows relationships between clusters
+- Balanced cluster sizes with Ward
+- Intermediate flexibility
+
+**Red flags across all methods:**
+
+- 🚩 **Complete disagreement**: Major discrepancies suggest poor data quality or integration
+- 🚩 **One method fails**: If one gives random-looking results, parameter issue
+- 🚩 **Batch-driven**: If clusters align with samples rather than biology, integration failed
+
+---
+
+### **Choosing Among Methods** 🎯
+
+**Use Leiden when:**
+
+- You want flexibility and adaptability
+- Dataset has complex structure
+- **Recommended for most scRNA-seq analyses**
+
+**Use K-means when:**
+
+- You have a specific number of clusters in mind
+- Quick preliminary analysis
+- Validating other methods
+
+**Use Hierarchical when:**
+
+- Relationships between clusters are important
+- Creating publication figures with dendrograms
+- Small to medium datasets (scales poorly to millions of cells)
+
+**Best practice:**
+
+- Primary analysis with **Leiden**
+- Validate with other methods
+- Use **dendrogram visualization** from Leiden clustering
+- Report consistent findings across methods
+
+---
+
+### **In This Dataset**:
+
+**Compare all three methods:**
+
+- Do hierarchical, k-means, and Leiden agree on major cell types?
+- Which method best separates biologically distinct populations?
+- Do hierarchical relationships make biological sense?
+- Are cluster sizes more balanced with hierarchical vs. Leiden?
+
+**Consensus across methods increases confidence in biological interpretations.**
+:::
+
 Finally, let's save the clustered data for further analysis.
 
 ```{python}
@@ -449,14 +935,17 @@ Plot proportion of cells from each condition per cluster.
 **Examining cluster composition helps identify batch effects and disease-specific populations:**
 
 **Expected patterns:**
+
 - **Balanced representation**: Most cell types should appear in both COVID and control samples
 - **Cell type markers**: Clusters should be defined by cell type (e.g., T cells, monocytes), not by sample or condition
 
 **Concerning patterns:**
+
 - **Sample-specific clusters**: If a cluster contains cells from only one sample, it may be a technical artifact
 - **Complete separation by condition**: If COVID and control cells never mix, integration may have failed
 
 **Interesting biological patterns:**
+
 - **Condition-enriched clusters**: More COVID cells in an "activated monocyte" cluster might indicate a disease response
 - **Altered proportions**: COVID samples having more of certain cell types (e.g., inflammatory monocytes) reflects biological changes
 - **Missing populations**: Absence of certain cell types in disease samples can be biologically meaningful
@@ -471,6 +960,116 @@ tmp = pd.crosstab(adata.obs['leiden_0.6'],adata.obs['sample'], normalize='index'
 tmp.plot.bar(stacked=True).legend(bbox_to_anchor=(1.4, 1),loc='upper right')
 ```
 
+::: {.callout-tip}
+## What to Look For in Cluster Composition Plots
+
+### **COVID vs. Control Distribution** ✅
+
+**Good integration:**
+
+- ✅ Most clusters have **both COVID and control cells**
+- ✅ Proportions roughly reflect overall dataset (50% COVID, 50% control in this dataset)
+- ✅ Clusters defined by **cell type**, not condition
+
+**Biologically interesting patterns:**
+
+- **Condition-enriched clusters**: One cluster has 70% COVID cells, 30% control
+  - Could be disease-associated cell state (e.g., activated/inflammatory cells)
+  - Or cell type more abundant in disease
+  - **Action**: Check marker genes, validate biological interpretation
+
+**Problem patterns:**
+
+- 🚩 **Cluster is 100% one condition**: Likely integration failure or batch effect
+- 🚩 **All clusters perfectly 50:50**: Might indicate over-correction (erased biological differences)
+- 🚩 **Alternating pattern**: Clusters 0, 2, 4 are COVID; clusters 1, 3, 5 are control = severe batch effect
+
+---
+
+### **Sample Distribution** ✅
+
+**Good integration:**
+
+- ✅ **All 8 samples represented** in most clusters
+- ✅ Proportions roughly reflect sample sizes
+- ✅ No single sample dominates any cluster
+
+**Acceptable patterns:**
+
+- Some variation in proportions (one sample has 20% of cluster, another has 10%)
+- Normal due to slight differences in cell type composition between individuals
+
+**Problem patterns:**
+
+- 🚩 **One sample contributes >50% of a cluster**: Sample-specific artifact
+- 🚩 **One sample missing from many clusters**: Poor quality sample or different biology
+- 🚩 **Cluster contains only 1-2 samples**: Integration failed for this cluster
+
+---
+
+### **Interpreting the Plots** 🔍
+
+**First plot (COVID vs. Control):**
+
+- X-axis: Clusters
+- Y-axis: Proportion of cluster
+- Colors: COVID (one color) vs. Control (another color)
+
+**Look for:**
+
+- Mostly balanced bars (both colors visible)
+- Systematic enrichment in specific clusters (biological signal)
+- Complete separation (technical problem)
+
+**Second plot (Sample distribution):**
+
+- X-axis: Clusters
+- Y-axis: Proportion of cluster
+- Colors: Each of 8 samples
+
+**Look for:**
+
+- "Rainbow" bars (all samples contributing)
+- Roughly equal-height colored segments
+- No dominant single color in any cluster
+
+---
+
+### **Biological Interpretation** 💡
+
+**When COVID enrichment is biological:**
+
+- Cluster has clear biological identity (e.g., "activated monocytes")
+- Enrichment makes sense (COVID causes immune activation)
+- Marker genes support interpretation
+- Validated across samples (not one sample driving it)
+
+**When enrichment is technical:**
+
+- No clear marker genes
+- Cluster also enriched for one sample
+- Contradicts expected biology
+- QC metrics differ between conditions
+
+---
+
+### **In This Dataset**:
+
+**Check the composition plots:**
+
+- Are most clusters balanced between COVID and control?
+- Are there any COVID-enriched or control-enriched clusters?
+- If so, do they make biological sense (e.g., inflammatory response)?
+- Are all 8 samples contributing to each cluster?
+- Are there any sample-specific clusters that need investigation?
+
+**Follow up:**
+
+- For condition-enriched clusters: Check marker genes to understand why
+- For sample-specific clusters: Verify with QC metrics and marker genes
+- For balanced clusters: Validates successful integration
+:::
+
 In this case we have quite good representation of each sample in each
 cluster. But there are clearly some biases with more cells from one
 sample in some clusters and also more COVID cells in some of the
@@ -484,6 +1083,126 @@ cluster per sample.
 tmp = pd.crosstab(adata.obs['sample'],adata.obs['leiden_0.6'], normalize='index')
 tmp.plot.bar(stacked=True).legend(bbox_to_anchor=(1.4, 1), loc='upper right')
 ```
+
+::: {.callout-tip}
+## What to Look For in Sample-wise Cluster Distribution
+
+### **Interpreting Stacked Bar Plot by Sample** ✅
+
+**What this shows:**
+
+- X-axis: Samples (covid_1, covid_15, ctrl_5, etc.)
+- Y-axis: Proportion (sums to 100% for each sample)
+- Colors: Different clusters
+
+**Expected pattern:**
+
+- ✅ **Similar bar compositions across samples**: Each sample has similar proportions of each cluster
+- ✅ **All colors present in all samples**: Each cell type represented in each sample
+- ✅ **Consistent COVID vs. Control**: COVID samples have similar compositions to each other, same for controls
+
+---
+
+### **Biological Variation** 🔍
+
+**Normal inter-individual variation:**
+
+- Some samples may have slightly more T cells, others more monocytes
+- Typically <20% difference between individuals
+- Should be consistent within groups (COVID vs. control)
+
+**COVID-related changes:**
+
+- **Expected**: COVID samples may have more of certain cell types
+  - Example: More activated monocytes, fewer naive T cells
+- **Consistent across COVID samples**: All COVID samples show similar pattern
+- **Makes biological sense**: Supported by literature on COVID immunology
+
+---
+
+### **Problem Patterns** 🚩
+
+**Sample outlier:**
+
+- 🚩 **One sample very different from all others**: 
+  - Missing major cell types
+  - Dominated by one cluster
+  - **Action**: Check sample quality, may need to exclude
+
+**Batch effects:**
+
+- 🚩 **Samples processed together look similar, but different from other batches**:
+  - Even after integration
+  - **Action**: Stronger batch correction needed
+
+**Missing cell types:**
+
+- 🚩 **One or more colors absent from a sample**:
+  - Could be technical (poor capture of that cell type)
+  - Could be biological (disease effect)
+  - **Action**: Validate with additional samples
+
+**Dominant cluster:**
+
+- 🚩 **One cluster is >60% of a sample**:
+  - Either sample-specific artifact
+  - Or that sample truly different (rare but possible)
+  - **Action**: Investigate with QC metrics and marker genes
+
+---
+
+### **Comparing to Biological Expectations** 💡
+
+**Typical PBMC composition:**
+
+- **T cells**: 40-60%
+- **Monocytes**: 10-30%
+- **B cells**: 5-15%
+- **NK cells**: 5-15%
+- **Other**: <5%
+
+**Check if your cluster proportions are reasonable:**
+
+- Sum T cell clusters: Should be ~40-60% of each sample
+- Sum monocyte clusters: ~10-30%
+- Major deviations may indicate technical issues or real biological changes
+
+---
+
+### **COVID vs. Control Comparison** 🔬
+
+**Expected in COVID:**
+
+- May have **altered cell type proportions**:
+  - More activated/inflammatory monocytes
+  - Changes in T cell subsets (exhausted T cells)
+  - Altered B cell proportions
+
+**Should be:**
+
+- **Consistent across COVID samples**: All show similar changes
+- **Statistically testable**: Use chi-square or compositional analysis
+- **Biologically interpretable**: Supported by known COVID immunology
+
+---
+
+### **In This Dataset**:
+
+**Examine the sample-wise plot:**
+
+- Do all samples have similar cluster compositions?
+- Are COVID and control samples systematically different?
+- Is any sample a clear outlier?
+- Do cluster proportions match expected PBMC composition?
+
+**If systematic differences exist:**
+
+- Are they consistent within groups (all COVID samples similar)?
+- Do they make biological sense?
+- Are they supported by marker gene expression?
+
+**This plot complements the previous cluster-wise plot to give a complete picture of cluster-sample relationships.**
+:::
 
 ::: {.callout-important}
 ## Discuss
@@ -503,6 +1222,125 @@ a technical bias there?
 sc.pl.violin(adata, ['n_genes_by_counts', 'total_counts', 'pct_counts_mt'], jitter=0.4, groupby = 'leiden_0.6', rotation= 45)
 ```
 
+::: {.callout-tip}
+## What to Look For in QC Metrics per Cluster
+
+### **Expected Biological Variation** ✅
+
+**n_genes_by_counts (Number of detected genes):**
+
+- **Large cells** (monocytes, dendritic cells): 1500-3000 genes
+- **Medium cells** (T cells, B cells): 1000-2000 genes  
+- **Small cells** (naive T cells, platelets): 500-1500 genes
+
+**total_counts (Total UMIs):**
+
+- **Metabolically active cells** (plasma B cells, activated macrophages): 5000-15000 UMIs
+- **Typical cells**: 2000-8000 UMIs
+- **Quiescent cells** (resting T cells): 1000-4000 UMIs
+
+**pct_counts_mt (% Mitochondrial reads):**
+
+- **Most cell types**: <5-10%
+- **Metabolically active cells**: May be slightly higher (5-15%)
+- **Acceptable range**: <20%
+
+---
+
+### **Biological vs. Technical Patterns** 🔍
+
+**Biological (acceptable) variation:**
+
+- ✅ **Monocyte clusters have higher UMI counts**: Larger cells with more RNA
+- ✅ **Plasma B cells have highest gene counts**: Active antibody production requires many genes
+- ✅ **Naive T cells have lower counts**: Small, quiescent cells
+- ✅ **Consistent within cell type**: All T cell clusters have similar metrics
+
+**Technical (problematic) patterns:**
+
+- 🚩 **One cluster has very high pct_counts_mt** (>20%): Poor quality cells or dying cells, not biological
+- 🚩 **One cluster has very low n_genes** (<500): Likely empty droplets or broken cells
+- 🚩 **Bimodal distribution within cluster**: Suggests cluster contains mixed quality cells
+- 🚩 **QC metrics correlate with clustering**: Clusters may be defined by quality rather than biology
+
+---
+
+### **Identifying Problem Clusters** 🚩
+
+**Low-quality cluster:**
+
+- Very low n_genes (<800)
+- Very low total_counts (<2000)
+- High pct_counts_mt (>20%)
+- No clear marker genes
+- **Action**: Consider filtering out this cluster
+
+**Possible doublet cluster:**
+
+- Very high n_genes (>4000)
+- Very high total_counts (>15000)
+- Expresses markers of multiple cell types
+- **Action**: Re-run doublet detection, consider removing
+
+**Stressed/dying cell cluster:**
+
+- High pct_counts_mt (>20%)
+- Elevated stress gene expression (heat shock proteins)
+- Lower total_counts
+- **Action**: May want to filter or annotate as "stressed cells"
+
+---
+
+### **Validating Biological Variation** ✅
+
+**If a cluster has high UMI counts, check:**
+
+1. **Is it a large cell type?** (monocytes, dendritic cells)
+2. **Does it have cell-type-specific markers?** (not just high counts of everything)
+3. **Is it consistent across samples?** (not one sample driving it)
+4. **Does it make biological sense?** (known to be large/active)
+
+**If yes to all → biological variation ✅**  
+**If no → may be technical artifact 🚩**
+
+---
+
+### **Interpreting the Violin Plots** 🎻
+
+**Shape of distribution:**
+
+- **Narrow violin**: Homogeneous cluster (good)
+- **Wide violin**: Heterogeneous cluster (may need subclustering)
+- **Bimodal violin**: Two subpopulations (investigate further)
+- **Long tails**: Outlier cells (possible doublets or low quality)
+
+**Relative positions:**
+
+- Clusters should have **distinct but reasonable** QC profiles
+- Extreme outlier cluster suggests technical issue
+- Very similar profiles across all clusters suggests over-clustering
+
+---
+
+### **In This Dataset**:
+
+**Check the QC violin plots:**
+
+- Are there clusters with extremely low n_genes or total_counts?
+- Do any clusters have high pct_counts_mt (>20%)?
+- Do the differences make biological sense?
+  - E.g., are monocyte clusters appropriately high?
+  - Are T cell clusters in a reasonable range?
+- Are there any obvious low-quality or doublet clusters?
+
+**Follow-up actions:**
+
+- **High MT% cluster**: Check marker genes, consider removing
+- **Very high counts cluster**: Verify not doublets with doublet scores
+- **Very low counts cluster**: Check if remnant poor QC cells, filter if needed
+- **Biological high counts**: Validate with known cell type markers
+:::
+
 Some clusters are clearly defined by higher number of genes and
 counts. These are either doublets or a larger cell type. And some
 clusters with low values on these metrics that are either low quality
@@ -515,14 +1353,17 @@ more detail to judge what you believe them to be.
 **Why do some cell types have more genes/UMIs than others?**
 
 **Cell size matters:**
+
 - **Large cells** (monocytes, dendritic cells): More cytoplasm → more RNA → higher UMI counts
 - **Small cells** (naive T cells, red blood cells): Less cytoplasm → less RNA → lower UMI counts
 
 **Metabolic activity:**
+
 - **Active cells** (plasma B cells secreting antibodies): High transcription → many genes detected
 - **Quiescent cells** (resting memory cells): Lower transcriptional activity
 
 **Technical considerations:**
+
 - Very high counts + many genes = possible doublets
 - Very low counts + few genes = possible low-quality cells or genuinely small/inactive cells
 
@@ -545,6 +1386,7 @@ smaller differences between subtypes within cell types.
 **Subclustering reveals fine-grained cell states within a major cell type.** Imagine studying "students" as a broad category—you'd initially separate students from teachers and administrators. But within students, there are meaningful subcategories: freshmen vs. seniors, STEM majors vs. humanities, full-time vs. part-time.
 
 Similarly, "T cells" is a broad category containing:
+
 - **CD4+ helper T cells**: Coordinate immune responses
 - **CD8+ cytotoxic T cells**: Kill infected cells
 - **Regulatory T cells**: Suppress excessive immune responses
@@ -552,10 +1394,12 @@ Similarly, "T cells" is a broad category containing:
 - **Activated vs. resting T cells**: Currently fighting infection vs. on standby
 
 In the full dataset analysis:
+
 - Variable genes are dominated by T cells vs. monocytes vs. B cells (major differences)
 - Subtle differences between CD4+ and CD8+ T cells may be obscured
 
 After subsetting to only T cells:
+
 - Variable genes now capture CD4 vs. CD8 vs. regulatory differences
 - PCA axes represent T-cell-specific variation
 - Clustering can resolve T cell subtypes
@@ -604,6 +1448,7 @@ reflects the variability within this cell type.
 4. **Reprocess**: Run HVG selection, scaling, PCA, integration, clustering on this subset
 
 **Why not just recluster the existing embedding?**
+
 - The existing PCA was optimized for separating T cells from other cell types
 - We need a new PCA optimized for separating T cell *subtypes*
 - Variable genes like CD3E (expressed in all T cells) aren't useful for T cell subclustering
@@ -619,6 +1464,89 @@ print("Full data:" , sum(adata.var.highly_variable ))
 print("T cells:" , sum(tcells.var.highly_variable))
 print("Intersection:" , sum(tcells.var.highly_variable & adata.var.highly_variable))
 ```
+
+::: {.callout-tip}
+## What to Look For in Subclustering HVG Selection
+
+### **Expected Pattern** ✅
+
+**Different HVGs for subpopulation:**
+
+- ✅ **Lower overlap** with full dataset HVGs (~30-60%)
+- ✅ **New T-cell-specific HVGs** appear (CD4, CD8A, activation markers, TCR genes)
+- ✅ **Pan-T-cell markers drop out** (CD3E expressed in all T cells → not variable)
+
+**Why overlap is lower:**
+
+- Full dataset HVGs: Capture T vs. B vs. myeloid differences
+- T cell HVGs: Capture CD4 vs. CD8 vs. NK vs. activation state differences
+- Different biological questions → different variable genes
+
+---
+
+### **Interpreting the Numbers** 🔍
+
+**Example output:**
+```
+Full data: 2000
+T cells: 1800
+Intersection: 800
+```
+
+**Interpretation:**
+
+- **40% overlap** (800/2000): Normal for subclustering
+- **1000 new T-cell-specific HVGs**: Genes that vary within T cells but not across all cell types
+- **1200 full-dataset HVGs not in T cells**: Genes that separated T cells from others, but constant within T cells
+
+---
+
+### **What Makes a Good T Cell HVG?** 💡
+
+**Should include:**
+
+- **CD4**: Distinguishes helper T cells
+- **CD8A/CD8B**: Distinguishes cytotoxic T cells
+- **FOXP3**: Regulatory T cells
+- **CCR7, SELL**: Naive vs. memory markers
+- **Activation markers**: CD69, CD25, IFNG
+- **NK markers**: GNLY, NKG7 (if NK cells included)
+
+**Should NOT include:**
+
+- **CD3E, CD3D, CD3G**: Expressed in all T cells (not variable)
+- **Monocyte markers**: CD14, LYZ (not present in T cells)
+- **B cell markers**: MS4A1 (not present in T cells)
+
+---
+
+### **Quality Check** 🔍
+
+**Good subclustering HVG selection:**
+
+- ✅ Genes make biological sense for distinguishing T cell subtypes
+- ✅ Includes known subtype markers (CD4, CD8A, activation genes)
+- ✅ Excludes pan-lineage markers
+- ✅ Sufficient number of HVGs (1500-2500)
+
+**Poor subclustering HVG selection:**
+
+- 🚩 Too few HVGs (<1000): May miss subtle differences
+- 🚩 Perfect overlap with full dataset: Using wrong matrix (didn't subset correctly)
+- 🚩 Dominated by batch-specific genes: Poor integration
+- 🚩 Contains non-T-cell markers: Contamination or doublets present
+
+---
+
+### **In This Dataset**:
+
+**Check the HVG output:**
+
+- Is the overlap reasonable (~30-60%)?
+- Are there enough new T-cell-specific HVGs?
+- Do the new HVGs make sense for T cell biology?
+- Will these genes help distinguish CD4+ from CD8+ T cells, activated from resting, naive from memory?
+:::
 
 We clearly have a very different gene set now, so hopefully it should
 better capture the variability within T-cells.
@@ -670,6 +1598,129 @@ sc.pl.umap(tcells, color="tcells_0.6", title="T cell UMAP, T cell clust", ax=axs
 sc.pl.embedding(tcells, 'X_umap_harmony', color="tcells_0.6", title="Full UMAP, T cell clust", ax=axs[1,2], show=False)
 ```
 
+::: {.callout-tip}
+## What to Look For in Subclustering Results
+
+### **Comparing Full vs. Subcluster UMAPs** ✅
+
+**Top row (T cell UMAP):**
+
+- Shows **only T/NK cells** in new embedding
+- Should reveal **finer structure** than full UMAP
+- Cell types that were close in full UMAP now spread out
+
+**Bottom row (Full UMAP):**
+
+- Shows where these cells were in the **original full dataset** embedding
+- Helps understand context and relationships to other cell types
+
+---
+
+### **Expected Improvements from Subclustering** ✅
+
+**Better separation of:**
+
+- ✅ **CD4+ vs. CD8+ T cells**: Should form distinct clusters
+- ✅ **Naive vs. memory T cells**: May see gradient or distinct clusters
+- ✅ **Activated vs. resting states**: Activation markers separate cells
+- ✅ **NK cells from T cells**: GNLY+ cells may form distinct cluster
+
+**Visual changes:**
+
+- T cell UMAP shows **more spread** and structure
+- **New clusters appear** that weren't visible in full dataset
+- Clusters correspond to known T cell subtypes
+
+---
+
+### **Comparing Clustering Results** 🔍
+
+**Three clustering views shown:**
+
+1. **leiden_0.6 (Full dataset clustering)**: 
+   - From initial analysis of all cell types
+   - T cells were in clusters 1, 2, 4, 8
+   - Coarse resolution for T cells
+
+2. **tcells_0.6 (Subclustering)**:
+   - New clustering specific to T cells
+   - Should show finer distinctions
+   - Reveals T cell subtypes
+
+**Expected pattern:**
+
+- **Subclusters subdivide original clusters**:
+  - Original cluster 1 might split into CD4+ naive and CD4+ memory
+  - Original cluster 2 might split into CD8+ subtypes
+  - NK cells may separate from T cells
+
+---
+
+### **Quality Indicators** ✅
+
+**Good subclustering:**
+
+- ✅ **Reveals known biology**: CD4+ and CD8+ cells separate
+- ✅ **Spatial coherence**: New clusters are contiguous on UMAP
+- ✅ **Batch mixing**: Samples still mix within subclusters
+- ✅ **Interpretable**: Can assign biological identity to new clusters
+
+**Poor subclustering:**
+
+- 🚩 **No new structure**: Looks identical to full dataset clustering
+- 🚩 **Random fragmentation**: Many tiny scattered clusters
+- 🚩 **Batch separation**: Subclusters align with samples rather than biology
+- 🚩 **Over-split**: Known homogeneous population fractured
+
+---
+
+### **Using Both UMAPs** 💡
+
+**T cell UMAP (focused view):**
+
+- **Use for**: Detailed annotation of T cell subtypes
+- **Shows**: Fine distinctions within T cell compartment
+- **Best for**: Understanding T cell biology
+
+**Full UMAP (context view):**
+
+- **Use for**: Seeing how T cells relate to other lineages
+- **Shows**: Which T cells were close to NK cells, where subclusters came from
+- **Best for**: Understanding broader immune landscape
+
+---
+
+### **Validating Subclustering** 🔍
+
+**Check with marker genes (next step):**
+
+1. **CD4 expression**: Should mark helper T cell clusters
+2. **CD8A expression**: Should mark cytotoxic T cell clusters
+3. **GNLY expression**: Should mark NK and some CD8+ T cells
+4. **Activation markers**: Should identify activated subclusters
+
+**Expected subclusters in PBMCs:**
+
+- CD4+ naive T cells (CCR7+, CD4+)
+- CD4+ memory T cells (CD4+, CCR7-)
+- CD8+ naive T cells (CCR7+, CD8A+)
+- CD8+ effector/memory T cells (CD8A+, CCR7-)
+- NK cells (GNLY+, NKG7+, CD3E-)
+- Possibly regulatory T cells (FOXP3+, CD4+)
+
+---
+
+### **In This Dataset**:
+
+**Examine the subclustering plots:**
+
+- Is the T cell UMAP more detailed than the same region in full UMAP?
+- Do new subclusters make biological sense when you check marker genes?
+- Is there better separation of CD4+ and CD8+ cells?
+- Are samples still mixing within subclusters (good integration)?
+- Did subclustering reveal any unexpected populations?
+:::
+
 As you can see, we do have some new clusters that did not stand out
 before. But in general the separation looks very similar.
 
@@ -687,6 +1738,144 @@ sc.pl.umap(tcells, color="CD8A", ax=axs[1,0], show=False, use_raw=True)
 sc.pl.umap(tcells, color="GNLY", ax=axs[1,1], show=False, use_raw=True)
 ```
 
+::: {.callout-tip}
+## What to Look For in Subcluster Marker Gene Plots
+
+### **Expected Marker Patterns** ✅
+
+**CD3E (pan-T cell marker):**
+
+- ✅ Should be **high across most cells** (all T cells)
+- ✅ **Lower in NK cells** (GNLY+ population)
+- Helps distinguish T cells from NK cells
+
+**CD4 (helper T cells):**
+
+- ✅ **Clear region of high expression**
+- ✅ **Absent from CD8+ regions**
+- ✅ Defines CD4+ T cell subclusters
+- Should be mutually exclusive with CD8A
+
+**CD8A (cytotoxic T cells):**
+
+- ✅ **Clear region of high expression**
+- ✅ **Absent from CD4+ regions**
+- ✅ Defines CD8+ T cell subclusters
+- Should be mutually exclusive with CD4
+
+**GNLY (NK cells and some cytotoxic T cells):**
+
+- ✅ **Distinct population high for GNLY**
+- ✅ May overlap partially with CD8+ T cells (cytotoxic function)
+- ✅ Should be **low/absent** in CD4+ T cells
+- Helps identify NK cells (GNLY+ CD3E-)
+
+---
+
+### **Successful Subclustering** ✅
+
+**If subclustering worked well:**
+
+- ✅ **Clear spatial separation** of CD4+ and CD8+ regions
+- ✅ **Distinct NK cell population** (high GNLY, low/no CD3E)
+- ✅ **No intermediate cells** expressing both CD4 and CD8A (would indicate doublets)
+- ✅ **Subclusters align** with marker expression patterns
+
+**Annotation guide:**
+
+- **CD3E+ CD4+ CD8A-**: CD4+ helper T cells
+- **CD3E+ CD4- CD8A+**: CD8+ cytotoxic T cells
+- **CD3E- GNLY+ NKG7+**: NK cells
+- **CD3E+ GNLY+**: NKT cells or activated CD8+ T cells
+
+---
+
+### **Problem Patterns** 🚩
+
+**Poor separation:**
+
+- 🚩 **CD4 and CD8A both expressed** throughout = doublets or poor clustering
+- 🚩 **No distinct populations** = subclustering didn't improve resolution
+- 🚩 **Random "salt and pepper"** pattern = technical noise
+
+**Unexpected patterns:**
+
+- 🚩 **CD4+ cells scattered throughout** = contamination or ambient RNA
+- 🚩 **All cells express all markers** = normalization issue
+- 🚩 **Large CD4+ CD8A+ population** = doublets
+
+**NK cell issues:**
+
+- 🚩 **GNLY+ cells don't cluster separately** = may need higher resolution
+- 🚩 **CD3E+ in GNLY+ cells** = either NKT cells (rare) or contamination
+
+---
+
+### **Biological Interpretation** 💡
+
+**CD4+ T cell region:**
+
+- Should contain multiple subclusters:
+  - Naive (CCR7+, CD62L+)
+  - Central memory (CCR7+, CD45RO+)
+  - Effector memory (CCR7-, CD45RO+)
+  - Regulatory (FOXP3+, CD25+)
+
+**CD8+ T cell region:**
+
+- Should contain subclusters:
+  - Naive (CCR7+, CD62L+)
+  - Effector (GZMA+, GZMB+, PRF1+)
+  - Memory (various states)
+  - Exhausted (PDCD1+, LAG3+, in COVID?)
+
+**NK cell population:**
+
+- GNLY+, NKG7+, CD3E-
+- May have subclusters (CD56bright vs. CD56dim)
+
+---
+
+### **Follow-up Actions** 🔬
+
+**To confirm subclusters:**
+
+```python
+# Check additional T cell markers
+sc.pl.umap(tcells, color=['CCR7', 'CD45RO', 'FOXP3', 'CD25'], use_raw=True)
+
+# Check activation markers
+sc.pl.umap(tcells, color=['CD69', 'IFNG', 'TNF'], use_raw=True)
+
+# Check exhaustion (relevant for COVID)
+sc.pl.umap(tcells, color=['PDCD1', 'LAG3', 'HAVCR2'], use_raw=True)
+
+# Create dotplot for subclusters
+sc.pl.dotplot(tcells, 
+              ['CD3E', 'CD4', 'CD8A', 'GNLY', 'CCR7', 'CD69', 'PDCD1'],
+              groupby='tcells_0.6',
+              dendrogram=True)
+```
+
+---
+
+### **In This Dataset**:
+
+**Check marker expression:**
+
+- Do CD4 and CD8A show clear, mutually exclusive expression?
+- Is there a distinct NK cell population (GNLY+ CD3E-)?
+- Do the marker patterns align with your subclusters?
+- Are there any unexpected patterns (doublets, contamination)?
+
+**Decide:**
+
+- Are subclusters better resolved than in full dataset?
+- Can you annotate subclusters with biological identities?
+- Do you need even finer resolution (higher leiden resolution)?
+- Should any subclusters be merged (over-clustering)?
+:::
+
 ::: {.callout-important}
 ## Discuss
 
@@ -695,6 +1884,7 @@ sc.pl.umap(tcells, color="GNLY", ax=axs[1,1], show=False, use_raw=True)
 - Also, there are some cells in these clusters that fall far away from the rest in the UMAPs, why do you think that is?
 
 **Consider:**
+
 - Are CD4+ and CD8+ T cells better separated after subclustering?
 - Do you see additional T cell states (activated, memory, regulatory)?
 - What might cause outlier cells (doublets, low quality, transitional states)?

@@ -36,6 +36,7 @@ just cover a few of those.
 **Cell type annotation is one of the most critical—and challenging—steps in single-cell analysis.** After clustering cells based on gene expression similarity, we need to assign biological identities to those clusters. But how do we know if cluster 3 represents monocytes, dendritic cells, or activated T cells?
 
 **Manual annotation challenges:**
+
 - Requires extensive biological expertise
 - Time-consuming and subjective
 - Difficult to standardize across studies
@@ -44,22 +45,26 @@ just cover a few of those.
 **Automated celltype prediction addresses these issues by:**
 
 **Reference-based approaches:**
+
 - Compare your cells to **annotated reference datasets** (e.g., published PBMC atlases)
 - Transfer labels from similar cells in the reference
 - Like using a field guide to identify a bird—compare features to known examples
 
 **Marker gene approaches:**
+
 - Check if cells express known marker genes for each cell type
 - Example: CD3E+ → T cells; CD14+ → monocytes; MS4A1+ → B cells
 - Like identifying a species by its characteristic features
 
 **Why multiple methods?**
+
 - **Different algorithms make different assumptions** (similarity metrics, confidence thresholds)
 - **No single "correct" annotation**—biology is complex
 - **Consensus across methods** increases confidence
 - Some cell types may be better captured by different approaches
 
 **Practical workflow:**
+
 1. Try multiple prediction methods
 2. Compare results and identify consensus
 3. Validate with marker gene expression
@@ -172,21 +177,25 @@ Subset one patient.
 **Analyzing one sample at a time is best practice for celltype prediction** for several reasons:
 
 **Avoids integration artifacts:**
+
 - Batch correction algorithms can blur biological differences
 - A cell type might be merged with another during integration
 - Integration works best when you already know cell types match across batches
 
 **Preserves sample-specific biology:**
+
 - Some cell types may be present in only some samples
 - Disease states may create unique cell populations
 - Integration assumes all samples have the same cell types (often false)
 
 **Better alignment with reference:**
+
 - Reference datasets are typically from single experiments
 - Sample-by-sample prediction avoids confounding batch effects
 - More accurate similarity calculations
 
 **Workflow:**
+
 1. Predict cell types **per sample** (current approach)
 2. Verify consistency across samples
 3. **Then** integrate with cell type labels already assigned
@@ -227,18 +236,21 @@ processed pbmc3k dataset from 10x.
 **Reference datasets are expertly annotated single-cell datasets used as "ground truth" for cell type prediction.** Think of them as textbooks or field guides—curated collections where cell identities are known with high confidence.
 
 **The PBMC3k dataset:**
+
 - **Source**: 10x Genomics public dataset
 - **Cells**: ~3,000 peripheral blood mononuclear cells from a healthy donor
 - **Annotation**: Manually curated cell types based on canonical markers
 - **Cell types included**: T cells (CD4+, CD8+), B cells, NK cells, monocytes (CD14+, FCGR3A+), dendritic cells
 
 **Why this reference works for our COVID data:**
+
 - **Same tissue**: Both are PBMCs (immune cells from blood)
 - **Same technology**: Both are 10x Genomics droplet-based scRNA-seq
 - **Well-characterized**: Extensively validated, widely used benchmark
 - **Healthy baseline**: Good reference for identifying altered states in disease
 
 **Reference quality matters:**
+
 - **Good reference**: Same tissue, similar technology, high-quality annotations
 - **Poor reference**: Different tissue, low quality, uncertain annotations → poor predictions
 - **Missing cell types**: If your data contains cell types not in the reference, they'll be misclassified
@@ -262,6 +274,73 @@ As you can see, the celltype annotation is in the metadata column
 sc.pl.umap(adata_ref, color='louvain')
 ```
 
+::: {.callout-tip}
+## What to Look For in Reference Dataset UMAP
+
+### **Quality Indicators** ✅
+
+**Good reference dataset:**
+
+- ✅ **Well-separated clusters**: Each cell type forms distinct cluster
+- ✅ **Biologically sensible arrangement**: Related cell types near each other
+  - T cell subtypes cluster together
+  - Monocyte subtypes adjacent
+  - B cells separate from T cells
+- ✅ **Clear cell type labels**: Each cluster has unambiguous annotation
+- ✅ **Reasonable cell numbers**: Each cell type has enough cells (>50)
+
+**Expected PBMC cell types:**
+
+- **CD4 T cells**: Largest T cell population
+- **CD8 T cells**: Cytotoxic T cells
+- **B cells**: Antibody-producing cells
+- **NK cells**: Natural killer cells
+- **CD14+ Monocytes**: Classical monocytes
+- **FCGR3A+ Monocytes**: Non-classical monocytes
+- **Dendritic cells**: Antigen-presenting cells
+- **Megakaryocytes** (rare): Platelet precursors
+
+---
+
+### **Reference Quality Checks** 🔍
+
+**Check for:**
+
+- ✅ **Complete coverage**: All major PBMC types present
+- ✅ **No "Unknown" clusters**: All clusters annotated
+- ✅ **Logical topology**: Immune cell lineages arranged sensibly
+- ✅ **No batch effects visible** (if reference has multiple samples)
+
+**Red flags:**
+
+- 🚩 **Poorly separated clusters**: Cell types overlap = poor quality reference
+- 🚩 **Missing cell types**: Reference incomplete for your tissue
+- 🚩 **Ambiguous labels**: "Unknown", "Mixed", "Unclear" clusters
+- 🚩 **Doublet clusters**: Mixed annotations
+
+---
+
+### **Matching to Your Data** 🔍
+
+**Before using as reference, verify:**
+
+- Do you expect the same cell types in your data?
+- Is the reference from healthy individuals (if you have disease)?
+- Are there disease-specific cell states the reference won't have?
+- Is the reference resolution appropriate (too broad vs. too detailed)?
+
+---
+
+### **In This Dataset**:
+
+**Check the reference UMAP:**
+
+- How many cell types are annotated?
+- Are major PBMC types all represented?
+- Do the cell type positions make biological sense?
+- Are there any rare cell types that might be hard to predict?
+:::
+
 Make sure we have the same genes in both datasets by taking the
 intersection.
 
@@ -271,21 +350,25 @@ intersection.
 **Celltype prediction requires that query and reference datasets share the same genes.**
 
 **The problem:**
+
 - Different experiments may quantify different gene sets
 - Some genes may be filtered out during QC
 - Reference might include genes not in your data (or vice versa)
 
 **Taking the intersection:**
+
 - Keeps only genes present in **both** datasets
 - Ensures fair similarity calculations (comparing same features)
 - Prevents errors from missing genes
 
 **What gets removed:**
+
 - Genes unique to one dataset
 - Genes filtered during QC in one but not the other
 - Usually removes 1,000-3,000 genes, retaining ~15,000-18,000
 
 **Impact:**
+
 - Minimal: Most informative genes are detected in both datasets
 - Marker genes are typically highly expressed and reliably detected
 - Rare or lowly expressed genes (which are noisy anyway) are often the ones filtered
@@ -336,16 +419,19 @@ sc.pl.umap(adata, color='leiden_0.6')
 **Integration aligns the reference and query datasets in a shared embedding space.** This enables direct comparison of cells across datasets.
 
 **Why integrate for celltype prediction?**
+
 - **Different batches**: Even PBMCs from different donors have batch effects
 - **Technical variation**: Sequencing runs, library prep, etc., create systematic differences
 - **Comparable space**: After integration, a T cell in your data should be near T cells in the reference
 
 **Scanorama approach:**
+
 1. Finds mutual nearest neighbors (cells that look similar in both datasets)
 2. Uses these "anchors" to align the datasets
 3. Creates a batch-corrected embedding where similar cell types cluster together regardless of origin
 
 **After integration:**
+
 - Cells of the same type from query and reference should overlap
 - Cell-to-cell distances become meaningful for label transfer
 - Can identify which reference cells are most similar to each query cell
@@ -391,6 +477,135 @@ sc.tl.umap(adata_merged, random_state=331)
 sc.pl.umap(adata_merged, color=["sample","louvain"])
 ```
 
+::: {.callout-tip}
+## What to Look For in Integrated Reference-Query UMAP
+
+### **Successful Integration** ✅
+
+**Good mixing:**
+
+- ✅ **Query and reference cells intermingle** within cell type clusters
+- ✅ **Cell types from both datasets overlap**
+  - Reference T cells cluster with query T cells
+  - Reference monocytes cluster with query monocytes
+- ✅ **Samples don't separate** by dataset origin
+
+**Preserved structure:**
+
+- ✅ **Cell types remain distinct**: B cells still separate from T cells
+- ✅ **Biological relationships maintained**: CD4+ and CD8+ T cells still near each other
+- ✅ **Similar topology** to reference UMAP: Major cell types in similar positions
+
+---
+
+### **Integration Quality Assessment** 🔍
+
+**Visual checks:**
+
+**Plot 1: Color by sample**
+
+- Should see **both colors (ctrl + pbmc3k) mixed** within each cell type cluster
+- ✅ Purple and yellow cells intermixed = good integration
+- 🚩 Separate purple and yellow regions = integration failed
+
+**Plot 2: Color by louvain (reference labels)**
+
+- Shows where reference cell types are located
+- Query cells should overlap with appropriate reference clusters
+- Used to identify which query cells are near which reference types
+
+---
+
+### **Problem Patterns** 🚩
+
+**Under-integration:**
+
+- 🚩 **Query and reference form separate islands**
+- 🚩 Same cell types don't overlap
+- 🚩 Looks like two separate datasets side-by-side
+- **Action**: Check gene overlap, try different integration method, verify data preprocessing
+
+**Over-integration:**
+
+- 🚩 **All structure lost**: Everything mixed into one blob
+- 🚩 Distinct cell types merged
+- 🚩 Can't distinguish B cells from T cells
+- **Action**: Less aggressive integration, check parameters
+
+**Partial integration:**
+
+- 🚩 **Some cell types integrate well, others don't**
+- May indicate:
+  - Some query cell types not in reference
+  - Quality differences between datasets
+  - Biological differences (disease vs. healthy)
+
+**Novel cell types in query:**
+
+- 🚩 **Query cells form separate cluster**
+- These cells don't match any reference type
+- Could be:
+  - COVID-specific activated state
+  - Low-quality cells
+  - Cell type missing from reference
+- **Action**: Inspect manually with marker genes
+
+---
+
+### **Validation Steps** ✅
+
+**To verify integration quality:**
+
+1. **Check known markers:**
+```python
+sc.pl.umap(adata_merged, color=['CD3E', 'CD14', 'MS4A1'], ncols=3)
+# T, monocyte, B cell markers should show expected patterns
+```
+
+2. **Check label consistency:**
+- Do query cells cluster with correctly labeled reference cells?
+- Or do they land in wrong cell type regions?
+
+3. **Look for outliers:**
+- Query cells far from all reference cells = potential novel types or low quality
+
+---
+
+### **Expected Outcome** 💡
+
+**For each cell type:**
+
+**T cells:**
+
+- Reference CD4 T cells + Query cells expressing CD3E/CD4 → overlap
+- Reference CD8 T cells + Query cells expressing CD3E/CD8A → overlap
+
+**Monocytes:**
+
+- Reference CD14 Mono + Query CD14+ cells → overlap
+- Reference FCGR3A Mono + Query FCGR3A+ cells → overlap
+
+**B cells:**
+
+- Reference B cells + Query MS4A1+ cells → overlap
+
+**NK cells:**
+
+- Reference NK + Query GNLY+ cells → overlap
+
+---
+
+### **In This Dataset**:
+
+**Examine both UMAP plots:**
+
+- **Sample plot**: Do ctrl_13 (query) and pbmc3k (reference) mix well?
+- **Louvain plot**: Where do the reference cell types locate?
+- Can you identify regions for each major cell type?
+- Are there any query cells that don't integrate (form separate islands)?
+- Does the mixing look appropriate for label transfer?
+:::
+
 ### Label transfer
 
 Using the functions from the [Spatial
@@ -406,25 +621,30 @@ two datasets and transfer labels to the celltype with the highest scores.
 **How it works:**
 
 **1. Calculate similarity:**
+
 - For each query cell, compute similarity to all reference cells
 - Use **cosine similarity** (angle-based, good for high-dimensional data)
 - Result: Similarity matrix (query cells × reference cells)
 
 **2. Aggregate by cell type:**
+
 - For each query cell and each reference cell type, sum similarities to cells of that type
 - Normalize by the number of reference cells per type
 - Result: Probability scores for each cell type
 
 **3. Assign label:**
+
 - Each query cell gets the label of the cell type with highest similarity score
 - Confidence = strength of the top score vs. second-best
 
 **Advantages:**
+
 - Simple and intuitive
 - Works well when query and reference are well-aligned
 - Provides "soft" predictions (probability scores)
 
 **Limitations:**
+
 - No "unknown" category—will assign a label even if similarity is poor
 - Sensitive to integration quality
 - Assumes all cell types in query are in reference
@@ -463,6 +683,88 @@ adata.obs['label_trans'] = class_def
 sc.pl.umap(adata, color="label_trans")
 ```
 
+::: {.callout-tip}
+## What to Look For in Label Transfer Results
+
+### **Expected Patterns** ✅
+
+**Good predictions:**
+
+- ✅ **Spatially coherent**: Cells with same prediction cluster together on UMAP
+- ✅ **Matches original clustering**: Leiden clusters correspond to predicted types
+- ✅ **Biologically sensible**: Cell type distribution matches expectations
+  - ~40-60% T cells
+  - ~10-30% monocytes
+  - ~5-15% B cells
+  - ~5-15% NK cells
+
+**Visual validation:**
+
+- Each predicted cell type occupies distinct UMAP region
+- Boundaries align with cluster boundaries
+- Related cell types adjacent (CD4 T cells near CD8 T cells)
+
+---
+
+### **Problem Patterns** 🚩
+
+**Mixed predictions within clusters:**
+
+- 🚩 One Leiden cluster contains multiple predicted cell types scattered throughout
+- Could indicate:
+  - Poor integration (query and reference didn't align)
+  - Over-clustering (cluster split inappropriately)
+  - Genuine mixed population (rare)
+- **Action**: Check integration quality, validate with marker genes
+
+**Implausible predictions:**
+
+- 🚩 **Dendritic cells** predicted in the middle of T cell cluster
+- 🚩 Cell types in biologically impossible arrangements
+- **Action**: Check integration, marker expression
+
+**All cells same type:**
+
+- 🚩 Everything predicted as "CD4 T cells"
+- Label transfer failed
+- **Action**: Recheck integration, distance calculation
+
+**Scattered predictions:**
+
+- 🚩 "Salt and pepper" pattern: Random cell type assignments
+- No spatial coherence
+- **Action**: Integration likely failed
+
+---
+
+### **Confidence Indicators** 🔍
+
+**High-confidence predictions (though not explicitly shown here):**
+
+- Cells deep within reference clusters
+- High similarity scores
+- Consensus from multiple reference neighbors
+
+**Low-confidence predictions:**
+
+- Cells between reference clusters (ambiguous position)
+- Low similarity scores
+- Mixed reference neighbors
+- **Action**: Mark as uncertain, require additional validation
+
+---
+
+### **In This Dataset**:
+
+**Check the label_trans UMAP:**
+
+- Does each predicted cell type form a coherent region?
+- Do predictions align with your leiden_0.6 clusters?
+- Are there any surprising predictions?
+- Can you identify all major PBMC types?
+- Check next plot to see how they map to clusters
+:::
+
 ```{python}
 #| label: plot-transfer
 # add to merged object.
@@ -475,6 +777,112 @@ sc.pl.umap(adata_merged, color=["sample","louvain",'label_trans'])
 sc.pl.umap(adata_merged[adata_merged.obs['sample']=='ctrl'], color='label_trans')
 ```
 
+::: {.callout-tip}
+## What to Look For in Merged and Query-Only UMAPs
+
+### **Merged UMAP (query + reference)** 🔍
+
+**Three panels to check:**
+
+**Panel 1: Sample (origin):**
+
+- Shows which cells are from ctrl_13 (query) vs. pbmc3k (reference)
+- ✅ **Mixed throughout**: Query and reference cells overlap
+- 🚩 **Separated**: Integration failed
+
+**Panel 2: Louvain (reference labels):**
+
+- Shows reference cell types
+- Query cells (no louvain annotation) appear gray/unlabeled
+- ✅ Reference structure preserved after integration
+
+**Panel 3: Label_trans (predictions):**
+
+- Shows transferred labels on **both** datasets
+- Reference cells keep original labels (validation)
+- Query cells get predicted labels
+- ✅ **Colors match between query and reference regions**: Successful transfer
+
+---
+
+### **Query-Only UMAP** 🔍
+
+**Shows label_trans on just ctrl_13 cells:**
+
+**Expected pattern:**
+
+- ✅ **Clear color blocks**: Each cell type occupies distinct region
+- ✅ **Smooth boundaries**: Related cell types adjacent
+- ✅ **Full coverage**: All regions have assignments
+
+**Validation:**
+
+- Compare to leiden_0.6 clusters
+- Do predicted types match expected types for each cluster?
+- Are there one-to-one or one-to-many relationships?
+
+---
+
+### **Common Patterns Explained** 💡
+
+**One-to-one mapping:**
+
+- ✅ Leiden cluster 0 → all "CD4 T cells"
+- ✅ Clear agreement, high confidence
+- Perfect scenario
+
+**One-to-many mapping:**
+
+- Leiden cluster 1 → mix of "CD4 T cells" and "CD8 T cells"
+- Could indicate:
+  - Under-clustering (should split cluster)
+  - Transition states (some cells changing type)
+  - Prediction uncertainty
+
+**Many-to-one mapping:**
+
+- Multiple leiden clusters → all "Monocytes"
+- Could indicate:
+  - Over-clustering (split one type inappropriately)
+  - Genuine subtypes (classical vs. non-classical monocytes)
+  - Check if reference has monocyte subtypes
+
+---
+
+### **Red Flags** 🚩
+
+**Fragmented predictions:**
+
+- 🚩 One cluster has multiple predicted types scattered throughout
+- 🚩 Same predicted type in distant UMAP regions
+- **Action**: Check integration quality
+
+**Unexpected cell types:**
+
+- 🚩 Cell types predicted that shouldn't be in PBMCs
+- 🚩 Very rare types dominating predictions
+- **Action**: Validate with marker genes
+
+**Empty regions:**
+
+- 🚩 Parts of UMAP with no predictions
+- Should not happen with label transfer (assigns to every cell)
+- Check if code ran correctly
+
+---
+
+### **In This Dataset**:
+
+**Examine all UMAPs:**
+
+- **Merged sample UMAP**: Do query and reference mix well?
+- **Merged louvain UMAP**: Can you see reference cell type positions?
+- **Merged label_trans UMAP**: Do predictions look consistent between query and reference?
+- **Query-only label_trans**: Do predictions look spatially coherent?
+
+**Next step**: Compare predictions to clusters to assess quality
+:::
+
 Now plot how many cells of each cell type can be found in each cluster.
 
 ::: {.callout-tip}
@@ -485,16 +893,19 @@ Now plot how many cells of each cell type can be found in each cluster.
 **What to look for:**
 
 **Good predictions:**
+
 - Each cluster is dominated by one cell type (high purity)
 - Each cell type maps to one or few clusters
 - Biologically sensible (e.g., CD4 T cells and CD8 T cells may be in separate clusters)
 
 **Potential issues:**
+
 - **Mixed clusters**: One cluster contains multiple cell types → may need higher resolution clustering or represents transition states
 - **Split cell types**: One cell type spread across many clusters → over-clustering, or genuine subtypes
-- **Unexpected combinations**: Biologicaly implausible mixtures → poor integration or annotation errors
+- **Unexpected combinations**: Biologically implausible mixtures → poor integration or annotation errors
 
 **Biological interpretation:**
+
 - Some heterogeneity is expected (T cells include many subtypes)
 - Doublets may appear as mixed-type clusters
 - Activated vs. resting states of the same cell type may cluster separately
@@ -505,6 +916,132 @@ Now plot how many cells of each cell type can be found in each cluster.
 tmp = pd.crosstab(adata.obs['leiden_0.6'],adata.obs['label_trans'], normalize='index')
 tmp.plot.bar(stacked=True).legend(bbox_to_anchor=(1.8, 1),loc='upper right')
 ```
+
+::: {.callout-tip}
+## What to Look For in Cluster-Celltype Distribution
+
+### **Interpreting the Stacked Bar Plot** 📊
+
+**X-axis**: Leiden clusters (0, 1, 2, ...)
+
+**Y-axis**: Proportion (100% per cluster)
+
+**Colors**: Predicted cell types
+
+**Bar composition**: Shows mixture of cell types within each cluster
+
+---
+
+### **Good Predictions** ✅
+
+**High cluster purity:**
+
+- ✅ **Each bar dominated by one color**: Cluster has >80% of one cell type
+- ✅ **Minor contamination acceptable**: 10-20% of related cell type OK
+  - Example: CD4 T cluster with 10% CD8 T cells (may share some biology)
+- ✅ **Consistent with biology**: Expected cell types in expected proportions
+
+**Example good patterns:**
+
+- Cluster 0: 90% "CD4 T cells", 10% "CD8 T cells" ✅
+- Cluster 3: 95% "B cells" ✅
+- Cluster 5: 85% "CD14+ Monocytes" ✅
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Low cluster purity:**
+
+- 🚩 **Rainbow bars**: Cluster contains many cell types in equal proportions
+- Possible causes:
+  - Low-quality cluster
+  - Doublets
+  - Transition zone
+  - Poor integration/prediction
+- **Action**: Validate with marker genes, check QC metrics
+
+**Biologically implausible mixtures:**
+
+- 🚩 50% T cells + 50% B cells in one cluster
+- These cell types should not mix
+- **Action**: Check for doublets, integration quality
+
+**One-to-many mapping:**
+
+- ✅ **Can be normal**: "Monocytes" split across clusters 2, 5, 7 (subtypes)
+- 🚩 **Problematic if**: Same prediction type scattered across distant clusters
+- **Check**: Are these biologically related (e.g., classical vs. non-classical monocytes)?
+
+**Many-to-one (opposite view):**
+
+- Multiple clusters all predicted as same type
+- Could indicate:
+  - Over-clustering (should merge)
+  - Genuine subtypes (keep separate, add subtype annotations)
+
+---
+
+### **Validation Questions** 🔍
+
+**For each cluster, ask:**
+
+1. **Does dominant cell type make sense?**
+   - Check marker gene expression
+   - Compare to your leiden clustering
+
+2. **Are minorities biologically plausible?**
+   - Small amount of related type: Normal
+   - Completely unrelated type: Problem
+
+3. **Is cluster pure enough?**
+   - >70% one type: Good for annotation
+   - <70%: Need investigation
+
+4. **Are all cell types represented?**
+   - Missing major type: Check reference quality
+   - Unexpected type: Validate or artifact
+
+---
+
+### **Decision Framework** 🎯
+
+**High purity cluster (>80% one type):**
+
+- ✅ **Confident annotation**: Assign that cell type label
+- Minor contamination likely represents:
+  - Doublets (check doublet scores)
+  - Transition cells
+  - Prediction uncertainty
+
+**Medium purity cluster (60-80%):**
+
+- 🤔 **Mixed population or prediction uncertainty**
+- **Action**: Check marker genes, may need subclustering
+
+**Low purity cluster (<60%):**
+
+- 🚩 **Problem cluster**
+- **Action**: Validate with markers, check QC, consider:
+  - Doublets
+  - Transition states
+  - Low quality
+  - Poor integration
+
+---
+
+### **In This Dataset**:
+
+**Examine the distribution plot:**
+
+- Which clusters have high purity (one dominant color)?
+- Which are mixed?
+- Do the dominant predictions match your expectations from previous labs?
+- Are there any unexpected combinations?
+- Based on this, which clusters can you confidently annotate?
+
+**Follow-up**: Plot marker genes for mixed clusters to understand the heterogeneity.
+:::
 
 ## Ingest
 
@@ -520,28 +1057,34 @@ https://scanpy-tutorials.readthedocs.io/en/latest/integrating-data-using-ingest.
 **How ingest works:**
 
 **1. Use reference structure:**
+
 - The reference has already been processed (PCA, neighbors, UMAP)
 - Instead of re-computing everything jointly, **project** query cells into this existing space
 
 **2. Find neighbors:**
+
 - For each query cell, find its nearest neighbors in the reference (in PCA space)
 - Use these neighbors to estimate where the query cell should sit in the reference UMAP
 
 **3. Transfer labels:**
+
 - Assign labels based on nearest reference neighbors
 - Query cells inherit labels from their reference neighbors
 
 **Advantages:**
+
 - **Fast**: No need to recompute everything
 - **Stable reference**: Reference structure doesn't change
 - **Scalable**: Can map many query datasets to one reference
 
 **Disadvantages:**
+
 - **Query doesn't influence reference**: Good if reference is high-quality, bad if query has unique biology
 - **Assumes query is a subset of reference**: Novel cell types will be misclassified
 - **Less flexible** than joint integration
 
 **When to use:**
+
 - Well-established reference atlas
 - Query expected to contain only known cell types
 - Need to map many datasets consistently to same reference
@@ -564,6 +1107,78 @@ adata.obsm["X_umap"] = adata.obsm["X_umap_uncorr"]
 sc.pl.umap(adata, color=['louvain','leiden_0.6'], wspace=0.5)
 ```
 
+::: {.callout-tip}
+## What to Look For in Ingest Predictions
+
+### **Comparing Ingest to Label Transfer** 🔍
+
+**Both should largely agree on major cell types, but may differ in details:**
+
+**Ingest characteristics:**
+
+- Projects onto reference UMAP (may create new coordinates)
+- Predictions based on **k-nearest reference neighbors**
+- More "hard" assignments (less smoothing than label transfer)
+
+**Expected agreement:**
+
+- ✅ Major cell types should match (T cells, B cells, monocytes)
+- ✅ Most clusters get same annotation from both methods
+
+**Expected differences:**
+
+-细 **Boundary cells**: Different methods may assign differently
+- **Rare cell types**: Ingest may be more/less sensitive
+- **Ambiguous cells**: Methods may disagree
+
+---
+
+### **Quality Checks** ✅
+
+**Compare the two UMAP plots:**
+
+**Plot 1: louvain (ingest predictions)**
+
+- Query cells now have louvain labels
+- Should form coherent regions by cell type
+
+**Plot 2: leiden_0.6 (your original clustering)**
+
+- Your unsupervised clustering
+
+**Check concordance:**
+
+- ✅ Do louvain and leiden_0.6 largely agree?
+- ✅ One leiden cluster → one louvain type (or closely related types)
+- 🚩 Completely different arrangements = poor prediction
+
+---
+
+### **Spatial Coherence** ✅
+
+**Good predictions:**
+
+- ✅ All cells with same louvain label cluster together
+- ✅ Cell type regions are contiguous
+- ✅ Related cell types adjacent
+
+**Poor predictions:**
+
+- 🚩 Same louvain label scattered across distant UMAP regions
+- 🚩 Intermingled cell types that shouldn't mix
+- 🚩 Complete mismatch with leiden clustering
+
+---
+
+### **In This Dataset**:
+
+**Compare louvain vs. leiden_0.6:**
+
+- Do they show similar structure?
+- Where do they agree/disagree?
+- Which seems more biologically plausible?
+:::
+
 Now plot how many cells of each cell type can be found in each cluster.
 
 ```{python}
@@ -571,6 +1186,70 @@ Now plot how many cells of each cell type can be found in each cluster.
 tmp = pd.crosstab(adata.obs['leiden_0.6'],adata.obs['louvain'], normalize='index')
 tmp.plot.bar(stacked=True).legend(bbox_to_anchor=(1.8, 1),loc='upper right')
 ```
+
+::: {.callout-tip}
+## What to Look For: Comparing Ingest vs. Label Transfer
+
+### **Side-by-Side Comparison** 🔍
+
+**You now have two predictions:**
+
+- **`label_trans`** (from Scanorama + cosine similarity)
+- **`louvain`** (from ingest)
+
+**Check the distribution plots:**
+
+**High agreement:**
+
+- ✅ **Same dominant cell type** for each cluster in both methods
+- ✅ **Similar proportions**: Both show ~80% CD4 T cells in cluster 1
+- **Interpretation**: Robust predictions, high confidence
+
+**Minor differences:**
+
+- 🤔 One method: 80% CD4 T / 20% CD8 T
+- 🤔 Other method: 85% CD4 T / 15% CD8 T
+- **Interpretation**: Acceptable variation, edge cases assigned differently
+
+**Major differences:**
+
+- 🚩 One method: "B cells" dominant
+- 🚩 Other method: "T cells" dominant
+- **Interpretation**: Integration quality issue, or reference ambiguity
+- **Action**: Validate with marker genes
+
+---
+
+### **Consensus Building** ✅
+
+**High-confidence annotations:**
+
+- Both methods agree on dominant cell type
+- >70% purity in both
+- Matches known markers
+
+**Medium-confidence:**
+
+- Methods mostly agree, minor differences
+- Validate with markers
+
+**Low-confidence:**
+
+- Methods completely disagree
+- Cluster has low purity in both
+- **Action**: Manual inspection required
+
+---
+
+### **In This Dataset**:
+
+**Compare the two distribution plots:**
+
+- Do label_trans and louvain predictions mostly agree?
+- Where are the biggest discrepancies?
+- Which method seems more accurate based on your biological knowledge?
+- For discordant clusters, plan to check marker genes
+:::
 
 ## Celltypist
 
@@ -589,11 +1268,13 @@ for more detail.
 **How it differs from label transfer:**
 
 **Label transfer (previous methods):**
+
 - Compares your cells to reference cells directly
 - Assigns label of most similar reference cells
 - Requires integrating your data with the reference
 
 **Celltypist (machine learning classifier):**
+
 - Trains a model on reference data (logistic regression)
 - Model learns gene expression patterns that define each cell type
 - Applies this learned model to your cells without integration
@@ -602,21 +1283,25 @@ for more detail.
 **Key features:**
 
 **1. Pretrained models:**
+
 - Trained on massive datasets (100,000s of cells)
 - Cover many tissues: immune (our focus), lung, liver, gut, etc.
 - Regularly updated with latest references
 
 **2. Hierarchical predictions:**
+
 - **Low resolution**: Broad categories (T cells, myeloid cells)
 - **High resolution**: Specific subtypes (CD4+ naive T cells, classical monocytes)
 - Can choose based on your needs
 
 **3. Majority voting:**
+
 - Initial predictions are per-cell
 - **Majority voting** smooths predictions using local neighborhoods
 - Reduces noise, increases confidence
 
 **When to use Celltypist:**
+
 - Standard cell types in well-studied tissues
 - Want confidence scores
 - Don't want to find/process a reference yourself
@@ -653,12 +1338,14 @@ expression to 10,000 counts per cell, which we already have in
 **Celltypist requires specific data preprocessing: log1p-normalized counts scaled to 10,000 total counts per cell.**
 
 **Why this format?**
+
 - **Consistency**: The model was trained on data preprocessed this way
 - **Normalization**: Accounts for sequencing depth differences
 - **Log transformation**: Stabilizes variance
 - **10K scaling**: Standard in the field, makes counts interpretable
 
 **What happens if you use wrong format?**
+
 - Model trained on normalized data won't work on raw counts
 - Scaled/regressed data will give incorrect predictions
 - Results will be unreliable
@@ -667,6 +1354,7 @@ expression to 10,000 counts per cell, which we already have in
 ```python
 adata.X.expm1().sum(axis=1)
 ```
+
 - `expm1()` reverses log1p transformation: $e^x - 1$
 - Sum should be ~10,000 for each cell
 - Small deviations are OK (due to gene filtering after normalization)
@@ -697,23 +1385,27 @@ the clustering identities are in column `over_clustering`.
 **Celltypist provides two types of predictions:**
 
 **1. `predicted_labels` (per-cell):**
+
 - Each cell gets an independent prediction
 - Based solely on that cell's gene expression
 - Can be noisy (single-cell data has dropout, stochasticity)
 
 **2. `majority_voting` (smoothed):**
+
 - Creates mini-clusters of similar cells (`over_clustering`)
 - Within each mini-cluster, assigns the majority cell type to all cells
 - **Rationale**: True cell types should cluster together; outlier predictions are likely errors
 - More robust, reduces noise
 
 **`over_clustering`:**
+
 - Leiden clustering at very high resolution
 - Creates many small, homogeneous clusters
 - Used as neighborhood for majority voting
 - Not the same as your biological clustering
 
 **Which to use?**
+
 - **Per-cell predictions**: If you want individual cell resolution, need rare cell detection
 - **Majority voting**: If you want robust consensus, reduce technical noise (recommended for most analyses)
 
@@ -728,6 +1420,142 @@ adata = predictions.to_adata()
 
 sc.pl.umap(adata, color = ['leiden_0.6', 'predicted_labels', 'majority_voting'], legend_loc = 'on data')
 ```
+
+::: {.callout-tip}
+## What to Look For in Celltypist Predictions
+
+### **Three UMAPs to Compare** 🔍
+
+**Panel 1: leiden_0.6 (your unsupervised clustering)**
+
+- Original clusters without any annotation
+- Baseline for comparison
+
+**Panel 2: predicted_labels (per-cell predictions)**
+
+- Direct Celltypist predictions for each cell
+- May be noisy, some cells misclassified
+
+**Panel 3: majority_voting (smoothed predictions)**
+
+- Consensus predictions after local voting
+- Should be cleaner, more spatially coherent
+
+---
+
+### **Expected Patterns** ✅
+
+**Good Celltypist predictions:**
+
+**Predicted_labels:**
+
+- ✅ **Mostly coherent** regions for each cell type
+- ✅ **Some scatter** expected (cell-level noise)
+- ✅ Recognizable cell types from pretrained model
+
+**Majority_voting:**
+
+- ✅ **Cleaner than predicted_labels**: Noise reduced
+- ✅ **Smooth boundaries**: Consistent local neighborhoods
+- ✅ **Spatially coherent**: Same type forms contiguous regions
+- ✅ **Matches leiden clustering**: Overlaps well with unsupervised clusters
+
+**Relationship:**
+
+- Majority_voting should be "smoothed" version of predicted_labels
+- Same major patterns, fewer scattered outliers
+
+---
+
+### **Quality Indicators** 🔍
+
+**High-quality predictions:**
+
+- ✅ **Detailed annotations**: "CD4+ naive T cells" not just "T cells" (high-resolution model)
+- ✅ **Spatial coherence**: Each cell type in distinct region
+- ✅ **Agreement with clusters**: One leiden cluster → one (or few related) cell type(s)
+- ✅ **Biologically sensible** arrangement
+
+**Expected cell types for Immune_All_High:**
+
+- Multiple T cell subtypes (CD4+, CD8+, regulatory, naive, memory, etc.)
+- Monocyte subtypes (classical, non-classical, intermediate)
+- B cell subtypes (naive, memory, plasmablasts)
+- NK cell subtypes
+- Dendritic cell subtypes
+- Possibly rare types (ILCs, platelets)
+
+---
+
+### **Problem Patterns** 🚩
+
+**Per-cell predictions:**
+
+- 🚩 **Complete scatter**: No spatial coherence = poor predictions
+- 🚩 **Impossible mixtures**: T cells in B cell region
+- 🚩 **Too many rare types**: Every cell a different rare subtype = model doesn't fit data
+
+**Majority voting:**
+
+- 🚩 **Still very noisy**: Smoothing didn't help = fundamental prediction issue
+- 🚩 **Lost all structure**: Over-smoothed, everything becomes one type
+- 🚩 **Completely different from predicted_labels**: Voting failed
+
+**Comparison to leiden:**
+
+- 🚩 **No correlation**: Predictions don't align with any clustering structure
+- 🚩 **One leiden cluster → many scattered cell types**: Integration or model mismatch
+- 🚩 **All predictions same type**: Model collapsed
+
+---
+
+### **Model Resolution Effects** 🎯
+
+**Immune_All_High (fine-grained):**
+
+- Predicts specific subtypes: "CD4+ naive T cells", "CD14+ classical monocytes"
+- More detailed, more informative
+- Risk: Over-splitting, ambiguous assignments
+- Good when: You need detailed annotations
+
+**Immune_All_Low (broad):**
+
+- Predicts major types: "T cells", "Monocytes"
+- More robust, fewer ambiguities
+- Less detailed
+- Good when: You want conservative, high-confidence annotations
+
+---
+
+### **Validation** ✅
+
+**Check if predictions make sense:**
+
+```python
+# Plot marker genes with predictions
+sc.pl.umap(adata, color=['majority_voting', 'CD3E', 'CD14', 'MS4A1'], ncols=2)
+
+# CD3E should be high in T cell predictions
+# CD14 should be high in monocyte predictions
+# MS4A1 should be high in B cell predictions
+```
+
+---
+
+### **In This Dataset**:
+
+**Examine the three UMAPs:**
+
+- **predicted_labels**: Do you see coherent cell type regions?
+- **majority_voting**: Is it cleaner than predicted_labels?
+- **leiden_0.6**: Do predictions align with your clusters?
+
+**Decision:**
+
+- Is majority_voting trustworthy enough to use?
+- Which granularity do you prefer (high vs. low resolution)?
+- Compare to label transfer and ingest results
+:::
 
 ::: {.callout-important}
 ## Task
@@ -750,21 +1578,25 @@ model.
 **Training a custom Celltypist model is useful when:**
 
 **1. Pretrained models don't match your tissue/species:**
+
 - Working with mouse, non-model organism, or rare tissue
 - Novel cell types not in public atlases
 - Very specific experimental context
 
 **2. You have a high-quality reference:**
+
 - Well-annotated dataset from your lab
 - Published atlas specific to your system
 - Better match to your experimental conditions
 
 **3. You want full control:**
+
 - Choose exactly which cell types to include
 - Define your own annotation granularity
 - Optimize for your specific use case
 
 **Trade-offs:**
+
 - **Pretrained models**: Trained on huge datasets (more robust), but may not perfectly match your context
 - **Custom models**: Perfect match to your reference, but limited by reference size and quality
 
@@ -821,11 +1653,13 @@ And finally train the model.
 **Training a Celltypist model involves:**
 
 **Parameters:**
+
 - **`labels='louvain'`**: Which metadata column contains cell type annotations
 - **`n_jobs=10`**: Parallel processing for speed
 - **`feature_selection=True`**: Automatically selects most informative genes for each cell type
 
 **What happens:**
+
 1. **Feature selection** (if enabled):
    - Identifies genes that best distinguish each cell type
    - Reduces dimensionality and noise
@@ -842,6 +1676,7 @@ And finally train the model.
    - Can be saved and reused
 
 **Logistic regression advantages:**
+
 - Interpretable: Can see which genes are most important
 - Fast prediction
 - Provides probability scores
@@ -875,6 +1710,145 @@ adata.obs["majority_voting_ref"] = predictions2.predicted_labels["majority_votin
 sc.pl.umap(adata, color = ['predicted_labels', 'majority_voting','predicted_labels_ref', 'majority_voting_ref'], legend_loc = 'on data', ncols=2)
 ```
 
+::: {.callout-tip}
+## What to Look For: Pretrained vs. Custom Celltypist Model
+
+### **Comparing Four Predictions** 🔍
+
+**Left column: Pretrained model (Immune_All_High)**
+
+- Trained on large multi-study atlas
+- Broader training data
+
+**Right column: Custom model (trained on pbmc3k)**
+
+- Trained on same reference we used for label transfer
+- Smaller but more specific training set
+
+**Panel comparisons:**
+
+1. **predicted_labels** (pretrained) vs. **predicted_labels_ref** (custom)
+2. **majority_voting** (pretrained) vs. **majority_voting_ref** (custom)
+
+---
+
+### **Expected Patterns** ✅
+
+**High agreement:**
+
+- ✅ **Same cell types** predicted by both models
+- ✅ **Similar spatial arrangement**
+- ✅ **Consistent majority voting** between models
+- **Interpretation**: Robust predictions, both models capture the same biology
+
+**Model-specific differences:**
+
+**Pretrained model may:**
+
+- ✅ **More detailed labels**: "CD4+ effector memory T cells" vs. just "CD4 T cells"
+- ✅ **More rare types**: Trained on more diverse data, knows more subtypes
+- 🚩 **Over-specific**: Predicts very rare types that may not be present
+
+**Custom model may:**
+
+- ✅ **Better matched to data**: Same preprocessing, same technology
+- ✅ **More conservative**: Fewer categories, higher confidence
+- 🚩 **Miss subtypes**: Limited training data, doesn't know rare populations
+
+---
+
+### **Quality Checks** 🔍
+
+**Good predictions (both models):**
+
+- Spatial coherence: Same type clusters together
+- Agreement with unsupervised clustering
+- Biologically interpretable
+- Majority voting improves per-cell predictions
+
+**When models disagree:**
+
+**Granularity differences:**
+
+- Pretrained: "CD4+ naive T cells"
+- Custom: "CD4 T cells"
+- **Interpretation**: Both correct, different resolution—choose based on needs
+
+**Cell type differences:**
+
+- Pretrained: "ILC3"
+- Custom: "NK cells"
+- **Interpretation**: May reflect:
+  - Genuine biological ambiguity (ILCs and NK cells related)
+  - Model training differences
+  - Need marker gene validation
+
+**Major disagreement:**
+
+- 🚩 Pretrained: "T cells"
+- 🚩 Custom: "Monocytes"
+- **Interpretation**: Serious problem—one model is wrong
+- **Action**: Validate with marker genes
+
+---
+
+### **Choosing Between Models** 🎯
+
+**Use pretrained model when:**
+
+- Analyzing standard, well-studied tissue
+- Want fine-grained annotations
+- Don't have good custom reference
+- Need consistency with published atlases
+
+**Use custom model when:**
+
+- Have high-quality, well-matched reference
+- Want control over annotation granularity
+- Reference captures your specific context (disease, treatment, etc.)
+- Pretrained model gives implausible results
+
+**Best practice:**
+
+- Try both
+- Look for consensus
+- Validate discrepancies with marker genes
+- Use biological knowledge to choose
+
+---
+
+### **In This Dataset**:
+
+**Compare all four predictions:**
+
+- Do pretrained and custom models largely agree?
+- Is one clearly better (more coherent, more accurate)?
+- Does majority voting improve predictions for both?
+- Are there specific cell types where models disagree?
+- Which would you trust more based on biological knowledge?
+
+**Validation strategy:**
+
+```python
+# Check marker agreement
+sc.pl.umap(adata, color=['majority_voting', 'CD3E', 'CD4', 'CD8A'], ncols=2)
+sc.pl.umap(adata, color=['majority_voting_ref', 'CD14', 'FCGR3A', 'MS4A1'], ncols=2)
+```
+:::
+
+::: {.callout-important}
+## Task
+
+Rerun predictions with Celltypist, but use another model, for instance
+`Immune_All_Low.pkl`, or any other model you find relevant. You can
+find a list of models [here](https://www.celltypist.org/models). How
+do the results differ for you?
+:::
+
+### Celltypist custom model
+
+[Previous training code sections remain the same through to plot-celltypist]
+
 ## Compare results
 
 The predictions from ingest are stored in the column 'louvain' while we
@@ -888,26 +1862,31 @@ named the label transfer with Scanorama as 'label_trans'.
 **What to look for:**
 
 **1. Consensus:**
+
 - Do all methods agree on major cell types? (Good sign)
 - Are discrepancies in ambiguous regions? (Expected)
 - Check if differences are biologically plausible
 
 **2. Method-specific patterns:**
+
 - **Scanorama + label transfer**: Smooth, continuous predictions (integration blends cells)
 - **Ingest**: May be more discrete (projection onto reference structure)
 - **Celltypist**: Can leave cells unassigned (provides confidence filtering)
 
 **3. Known biology:**
+
 - Do marker genes support the predictions?
 - Are T cells expressing CD3E?
 - Are monocytes expressing CD14?
 
 **4. Problematic discrepancies:**
+
 - One method calls a cluster "B cells", another calls it "T cells" → investigate
 - Methods split one biological cluster differently → check if genuine subtypes
 - Unexpected cell types → could be contaminants, doublets, or novel biology
 
 **Resolution strategy:**
+
 1. Plot marker genes for disputed cell types
 2. Check if discrepancies occur in low-quality cells
 3. Use biological knowledge to adjudicate
@@ -918,6 +1897,150 @@ named the label transfer with Scanorama as 'label_trans'.
 #| label: plot-all
 sc.pl.umap(adata, color=['louvain','label_trans','majority_voting', 'majority_voting_ref'], wspace=0.5, ncols=2)
 ```
+
+::: {.callout-tip}
+## What to Look For: Comparing All Prediction Methods
+
+### **Four Methods to Compare** 🔍
+
+**1. `louvain` (Ingest):**
+
+- Projection-based
+- Uses reference structure
+
+**2. `label_trans` (Scanorama + label transfer):**
+
+- Integration-based
+- Cosine similarity
+
+**3. `majority_voting` (Celltypist pretrained):**
+
+- Machine learning, large atlas
+- Smoothed predictions
+
+**4. `majority_voting_ref` (Celltypist custom):**
+
+- Machine learning, pbmc3k reference
+- Smoothed predictions
+
+---
+
+### **Consensus Analysis** ✅
+
+**High-confidence cell types (all methods agree):**
+
+- ✅ **Cluster X**: All four methods predict "CD4 T cells"
+- ✅ **Strong consensus**: Very likely correct
+- ✅ **Use for downstream analysis**
+
+**Moderate-confidence (3/4 methods agree):**
+
+- 3 methods: "CD8 T cells"
+- 1 method: "NK cells"
+- **Likely CD8 T cells**, but check GNLY expression (NK marker)
+
+**Low-confidence (methods disagree):**
+
+- 2 methods: "Monocytes"
+- 2 methods: "Dendritic cells"
+- **Action**: Check CD14 (monocytes) vs. FCER1A (DCs)
+
+**No consensus:**
+
+- All four methods give different predictions
+- 🚩 **Problem region**: Doublets, low quality, or novel biology
+- **Action**: Manual inspection required
+
+---
+
+### **Method-Specific Biases** 🔍
+
+**Ingest may:**
+
+- Be influenced by reference UMAP structure
+- Over-assign to common types (reference has more of these)
+
+**Label transfer may:**
+
+- Create smoother boundaries (integration effect)
+- Better handle similar cell types
+
+**Pretrained Celltypist may:**
+
+- Predict rare/specific subtypes
+- Over-confident on familiar types from training
+- Miss cell types not in training data
+
+**Custom Celltypist may:**
+
+- More conservative
+- Limited to pbmc3k cell types
+- Better matched to this dataset
+
+---
+
+### **Building Consensus Annotations** 💡
+
+**Strategy:**
+
+1. **Identify consensus regions**:
+   - Where all methods agree → confident annotation
+
+2. **Resolve discrepancies**:
+   - Check marker gene expression
+   - Use biological knowledge
+   - Consider all evidence
+
+3. **Create final annotation**:
+   - High confidence: Use consensus
+   - Medium confidence: Add qualifier ("likely CD8 T cells")
+   - Low confidence: Leave as cluster number or "Uncertain"
+
+4. **Validate**:
+   ```python
+   # Create final annotation column
+   adata.obs['final_celltype'] = adata.obs['majority_voting']  # Start with one method
+   
+   # Manually adjust discrepancies based on markers
+   # Check with markers
+   sc.pl.dotplot(adata, 
+                 ['CD3E', 'CD4', 'CD8A', 'GNLY', 'MS4A1', 'CD14', 'FCGR3A'],
+                 groupby='final_celltype')
+   ```
+
+---
+
+### **Visual Comparison Checklist** ✅
+
+**For each UMAP, check:**
+
+- [ ] Spatial coherence (same type clusters together)
+- [ ] Biological plausibility (expected cell types in expected proportions)
+- [ ] Agreement with leiden_0.6 clustering
+- [ ] No scattered random assignments
+
+**Compare across UMAPs:**
+
+- [ ] Major cell types consistent across all methods
+- [ ] Related types in similar locations (CD4 and CD8 T cells adjacent)
+- [ ] Discrepancies explainable (rare types, ambiguous cells)
+
+---
+
+### **In This Dataset**:
+
+**Study all four predictions:**
+
+- Which methods show highest agreement?
+- Where are the major discrepancies?
+- Do predictions align with your biological knowledge of PBMCs?
+- Which method(s) would you trust most?
+- How would you create a final consensus annotation?
+
+**Key observation from text:** "the main celltypes are generally the same, but there are clearly differences, especially with regards to the cells predicted as either ILC/NK/CD8 T-cells."
+
+**This is expected:** ILCs, NK cells, and CD8+ T cells are closely related (all cytotoxic lymphocytes), so disambiguation requires careful marker validation.
+:::
 
 As you can see, the main celltypes are generally the same, but there are
 clearly differences, especially with regards to the cells predicted as
@@ -945,26 +2068,31 @@ your choice as in the example below.
 **How it works:**
 
 **1. Define marker gene sets:**
+
 - Curated lists of genes for each cell type
 - Example: T cells = {CD3E, CD3D, CD3G}; B cells = {MS4A1, CD19, CD79A}
 - Can come from literature, databases, or expert knowledge
 
 **2. Find cluster markers:**
+
 - For each cluster, identify top differentially expressed genes
 - Compare these DEGs to the marker gene lists
 
 **3. Enrichment test:**
+
 - Is the cluster enriched for marker genes of a particular cell type?
 - Uses hypergeometric test (like pathway enrichment)
 - Significant enrichment → likely that cell type
 
 **Advantages:**
+
 - **Transparent**: Easy to see why a cluster got a label
 - **Flexible**: Can use custom, tissue-specific marker lists
 - **No reference needed**: Only requires marker gene lists
 - **Biological grounding**: Based on known biology, not just similarity
 
 **Disadvantages:**
+
 - **Quality depends on marker lists**: Poor markers → poor annotations
 - **Incomplete**: Not all cell types have well-defined markers
 - **Ambiguous cases**: Cells may express markers of multiple types (activated/transitioning cells)
@@ -1008,20 +2136,24 @@ gene_dict = df.geneSymbol.str.split(",").to_dict()
 **Filtering marker gene sets for quality:**
 
 **`nG > 5`**: Minimum 5 genes per cell type
+
 - Too few genes → unreliable enrichment test
 - Noisy, low statistical power
 - Single genes can be misleading
 
 **`nG < 100`**: Maximum 100 genes per cell type
+
 - Too many genes → not specific
 - Probably includes genes not truly specific to that cell type
 - Dilutes signal
 
 **`cancerType == "Normal"`**: Only use markers from healthy tissue
+
 - Cancer markers may not apply to normal immune cells
 - Keeps annotations biologically relevant
 
 **Gene set sizes:**
+
 - **Ideal**: 10-50 genes per cell type
 - Specific enough to be informative
 - Large enough for robust statistics
@@ -1100,27 +2232,33 @@ for cl in adata.obs['leiden_0.6'].cat.categories:
 **The enrichment workflow:**
 
 **1. Get top 300 DEGs per cluster:**
+
 - These are genes that define the cluster's identity
 - 300 is arbitrary but reasonable (too few = miss signal, too many = add noise)
 
 **2. Test enrichment against marker gene sets:**
+
 - For each cell type's markers, test if they're over-represented in the DEGs
 - Uses hypergeometric test (same as pathway enrichment)
 
 **3. Assign label:**
+
 - Cell type with **lowest p-value** and **highest combined score**
 - Combined score = -log10(p-value) × (overlap/expected)
 - Accounts for both significance and effect size
 
 **4. Handle ties:**
+
 - If multiple cell types have identical scores, list all (e.g., "CD4 T cell / Regulatory T cell")
 - Reflects biological ambiguity
 
 **5. Unassigned clusters:**
+
 - If no significant enrichment → "Unass"
 - Could be low-quality cells, doublets, or cell types not in the marker database
 
 **Parameters:**
+
 - `background=adata.shape[1]`: Total number of genes (for hypergeometric test)
 - `cutoff=1`: Keep all results (we filter manually)
 :::
@@ -1139,6 +2277,147 @@ adata.obs["GS_overlap_pred"] = prediction
 sc.pl.umap(adata, color='GS_overlap_pred')
 ```
 
+::: {.callout-tip}
+## What to Look For in Marker Gene Set Predictions
+
+### **Interpreting Results** ✅
+
+**Good marker-based predictions:**
+
+- ✅ **Clear, specific labels**: "T cell", "B cell", "Monocyte"
+- ✅ **Spatially coherent**: Same prediction in contiguous UMAP regions
+- ✅ **Matches known biology**: Expected PBMC types
+- ✅ **Few "Unass" clusters**: Most clusters have good marker matches
+
+**Prediction types:**
+
+**Single label (e.g., "T cell"):**
+
+- ✅ Strong enrichment for that cell type's markers
+- ✅ Clear match, high confidence
+
+**Multiple labels (e.g., "CD4 T cell / CD8 T cell"):**
+
+- 🤔 Tied enrichment scores
+- Cluster expresses markers of both (could be mixed or transition cells)
+- **Action**: Check if these are biologically related
+
+**"Unass" (Unassigned):**
+
+- No significant enrichment for any marker set
+- Could be:
+  - **Novel cell type** not in marker database
+  - **Low-quality cells**
+  - **Doublets** (mixed expression)
+  - **Transitional state**
+- **Action**: Inspect manually with broad markers
+
+---
+
+### **Comparing to Reference-Based Methods** 🔍
+
+**High agreement with other methods:**
+
+- ✅ Marker-based: "T cell"
+- ✅ Celltypist: "CD4 T cell"
+- ✅ Label transfer: "CD4 T cells"
+- **Interpretation**: Robust annotation, all methods converge
+
+**Partial agreement:**
+
+- Marker-based: "T cell"
+- Other methods: "T cell" (more specific)
+- **Interpretation**: Marker-based is broader (depends on marker list granularity)
+
+**Disagreement:**
+
+- Marker-based: "Monocyte"
+- Other methods: "Dendritic cell"
+- **Interpretation**: May reflect:
+  - Marker list incomplete (missing DC markers)
+  - Reference-based methods more sensitive
+  - Ambiguous cell type (monocytes and DCs share some markers)
+- **Action**: Check specific markers (CD14 vs. FCER1A)
+
+---
+
+### **Method Strengths** 💡
+
+**Marker gene sets excel at:**
+
+- ✅ Major cell type identification (T, B, myeloid)
+- ✅ Transparency (can see which genes drove annotation)
+- ✅ No integration needed
+- ✅ Biological grounding
+
+**Marker gene sets struggle with:**
+
+- 🚩 Fine distinctions (CD4+ naive vs. memory T cells)
+- 🚩 Novel cell types (not in database)
+- 🚩 Activated/transitional states
+- 🚩 Requires high-quality marker list
+
+---
+
+### **Quality of Marker List** 🔍
+
+**Good marker database:**
+
+- Comprehensive (all expected cell types)
+- Specific (markers unique to each type)
+- Tissue-appropriate (PBMC markers for PBMC data)
+- Well-curated (from literature, validated)
+
+**Signs of poor marker list:**
+
+- 🚩 Many "Unass" clusters (markers missing for cell types in your data)
+- 🚩 All clusters assigned to one type (markers too broad)
+- 🚩 Biologically implausible assignments
+
+---
+
+### **Final Annotation Decision Framework** 🎯
+
+**For each cluster:**
+
+1. **Check all four prediction methods**
+2. **Look for consensus** (3-4 methods agree)
+3. **Validate with canonical markers**:
+```python
+sc.pl.umap(adata, color=['GS_overlap_pred', 'CD3E', 'MS4A1', 'CD14'])
+```
+4. **Resolve discrepancies**:
+   - Trust methods that align with markers
+   - Use biological knowledge
+   - When uncertain, annotate conservatively
+
+5. **Create final annotation**:
+```python
+# Example final annotation
+adata.obs['final_celltype'] = adata.obs['majority_voting']  # Start with one
+# Manually refine based on consensus and markers
+```
+
+---
+
+### **In This Dataset**:
+
+**Compare GS_overlap_pred to other methods:**
+
+- Do marker-based predictions match Celltypist/ingest/label_trans?
+- Where are the biggest discrepancies?
+- Are there "Unass" clusters? What might they be?
+- Which method seems most accurate based on your biological knowledge?
+
+**As noted in text:** "clear differences, especially with regards to the cells predicted as either ILC/NK/CD8 T-cells"
+
+**This is a known challenge:** These cell types are closely related (all cytotoxic lymphocytes). Validation requires:
+- CD3E (T cells yes, NK no)
+- CD8A (CD8+ T cells)
+- GNLY/NKG7 (NK and some CD8+ T cells)
+- NCR1, NCR3 (NK specific)
+:::
+
 ::: {.callout-important}
 ## Discuss
 
@@ -1147,11 +2426,29 @@ methods above, but there are clear differences. Which do you think
 looks better?
 
 **Questions to consider:**
+
 - Do marker-based predictions match reference-based predictions?
 - Where do they disagree, and why might that be?
 - Which method would you trust more, and in what situations?
 - How would you validate disputed annotations?
 - Are there clusters where all methods agree? Where all methods disagree?
+
+**Validation strategy:**
+
+```python
+# For disputed clusters, check specific markers:
+sc.pl.umap(adata, color=['GS_overlap_pred', 'majority_voting', 'CD3E', 'GNLY', 'CD8A'])
+
+# Create consensus annotation
+# Use agreement between methods + marker validation
+```
+
+**Building final annotation:**
+
+1. Consensus cell types (all methods agree) → high confidence
+2. Majority consensus (3/4 methods) → validate with markers
+3. No consensus → manual annotation with markers
+4. Document decisions and confidence levels
 :::
 
 ## Save data

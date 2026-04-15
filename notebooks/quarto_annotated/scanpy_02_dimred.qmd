@@ -124,6 +124,56 @@ sc.pl.highly_variable_genes(adata)
 adata = adata[:, adata.var['highly_variable']]
 ```
 
+::: {.callout-tip}
+## What to Look For in HVG Plot
+
+### **Expected Pattern** ✅
+
+**Dispersion vs. Mean plot shows:**
+
+- **Red points**: Highly variable genes (selected)
+- **Black points**: Not variable enough (excluded)
+
+**Good HVG selection:**
+
+- Red points scattered across different expression levels (low, medium, high mean)
+- Clear separation between red and black points
+- ~2,000-4,000 genes selected
+- Includes both moderately and highly expressed genes
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Too few HVGs (<1,000)**:
+
+- 🚩 May be too stringent, losing important cell type markers
+- **Action**: Lower `min_disp` threshold
+
+**Too many HVGs (>5,000)**:
+
+- 🚩 May include too much noise
+- **Action**: Increase `min_disp` threshold or adjust `max_mean`
+
+**All HVGs are highly expressed**:
+
+- 🚩 Missing lowly-expressed but variable markers (e.g., transcription factors)
+- **Action**: Lower `min_mean` threshold
+
+**HVGs dominated by one sample/batch**:
+
+- 🚩 Batch effect genes selected as "variable"
+- **Action**: Consider batch-aware HVG selection
+
+---
+
+### **In This Dataset**:
+
+- ~2,000-3,000 HVGs selected across expression range
+- Good balance of low, medium, and high expression genes
+- Appropriate for downstream analysis ✅
+:::
+
 ## Z-score transformation
 
 Now that the genes have been selected, we can proceed with PCA. Since
@@ -147,10 +197,12 @@ regression can also be done here.
 **Scaling (Z-score normalization) and regression are preprocessing steps that prevent technical confounders from dominating the analysis:**
 
 **Scaling**: Transforms each gene to have mean = 0 and standard deviation = 1
+
 - **Why?** A highly expressed gene (e.g., 1000 counts average) naturally has more variance than a lowly expressed gene (10 counts average). Without scaling, PCA would only capture variation in highly expressed genes, missing important but lower-expressed markers.
 - Z-score formula: (value - mean) / standard deviation
 
 **Regression**: Removes the linear effect of technical variables
+
 - **Total counts**: Some cells simply captured more RNA; this isn't biology, it's sampling depth
 - **Percent mitochondria**: As discussed in QC, this often reflects technical quality rather than cell state
 - **How?** For each gene, fit: `expression ~ total_counts + pct_mt`, then replace expression values with the residuals (the variation *not* explained by these variables)
@@ -190,6 +242,7 @@ segregate samples based on gene expression patterns in the data.
 **PCA (Principal Component Analysis) is like finding the "most important directions" in your data.** Imagine you're describing the differences between people in a room. Instead of listing everyone's height, weight, age, shoe size, etc., you might summarize: "The main difference is tall vs. short people (PC1), and the second main difference is young vs. old people (PC2)."
 
 For single-cell data with ~2,000 genes, PCA finds the main "directions" of variation:
+
 - **PC1** might separate immune cells from each other (T cells vs. monocytes)
 - **PC2** might separate activated vs. resting cells
 - **PC3** might capture a technical batch effect
@@ -201,6 +254,7 @@ Each PC is a combination of multiple genes working together. This reduces thousa
 ## Why run this code?
 
 **PCA decomposes the gene expression matrix into:**
+
 - **Principal Components (PCs)**: New axes that explain maximum variance, with each subsequent PC explaining progressively less
 - **Loadings**: The contribution of each gene to each PC (which genes define that direction)
 - **Embeddings**: Each cell's position along each PC
@@ -223,6 +277,64 @@ We then plot the first principal components.
 sc.pl.pca(adata, color='sample', components = ['1,2','3,4','5,6','7,8'], ncols=2)
 ```
 
+::: {.callout-tip}
+## What to Look For in PCA Plots
+
+### **Expected Patterns** ✅
+
+**Good PCA embedding:**
+
+- **PC1 & PC2**: Capture major cell type differences (e.g., T cells vs. monocytes vs. B cells)
+- **Later PCs (3-8)**: Capture subtler differences (cell states, rare populations)
+- **Spread-out cells**: Cells distributed across the PC space, not all clumped
+- **Smooth gradients**: Transitions between related cell types appear continuous
+
+**Sample distribution:**
+
+- All samples represented across PCs (not one sample in one corner)
+- Biological replicates cluster together
+- Disease vs. control differences visible
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Batch effects dominate**:
+
+- 🚩 Samples completely separate by batch rather than biology
+- 🚩 PC1 or PC2 is entirely driven by sample ID
+- **In this dataset**: You can see sample separation, indicating batch effects need correction
+
+**All cells in a blob**:
+
+- 🚩 No structure visible = PCA not capturing variation
+- **Action**: Check if scaling/normalization worked, increase n_top_genes
+
+**One sample dominates**:
+
+- 🚩 One sample scattered across space while others cluster tightly
+- Possible doublet contamination or quality issue in that sample
+
+**Horseshoe/arch effect**:
+
+- 🚩 Cells form a curved arch shape
+- Can be artifact of high sparsity or needs diffusion-based methods
+
+**First few PCs capture <5% variance**:
+
+- 🚩 Data is very noisy or poorly processed
+- **Action**: Check QC, HVG selection, scaling
+
+---
+
+### **In This Dataset**:
+
+- Clear separation visible in PC1-2 (likely cell types)
+- **Batch effects visible**: Samples cluster by ID rather than fully mixing
+- Later PCs show additional structure
+- Will need batch correction before clustering ⚠️
+:::
+
 To identify genes that contribute most to each PC, one can retrieve the
 loading matrix information.
 
@@ -233,6 +345,57 @@ sc.pl.pca_loadings(adata, components=[1,2,3,4,5,6,7,8])
 
 # OBS! only plots the positive axes genes from each PC!!
 ```
+
+::: {.callout-tip}
+## What to Look For in PCA Loadings
+
+### **Expected Patterns** ✅
+
+**Interpretable PCs:**
+
+- **PC1**: Often dominated by major cell type markers
+  - Example: CD3 genes (T cells) vs. CD14/LYZ (monocytes)
+- **PC2-3**: Cell subtypes or activation states
+  - Example: CD4 vs. CD8, naive vs. activated
+- **Later PCs**: Rare cell types, cell cycle, stress response
+
+**Biological coherence:**
+
+- Genes with high loadings on same PC should be functionally related
+- Positive and negative ends represent contrasting cell types/states
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Technical genes dominate**:
+
+- 🚩 PC1 dominated by ribosomal or mitochondrial genes = regression failed
+- 🚩 PC1 dominated by dissociation-stress genes = tissue processing artifact
+- **Action**: Re-run regression, remove technical genes
+
+**Housekeeping genes in top loadings**:
+
+- 🚩 GAPDH, ACTB in top 10 = not capturing biological variation
+- **Action**: Check HVG selection, may need to exclude constitutive genes
+
+**No recognizable markers**:
+
+- 🚩 Top genes are obscure/unannotated = noisy PC
+- May be normal for later PCs (15+)
+
+**Same genes in multiple PCs**:
+
+- 🚩 Redundant PCs, not adding new information
+- Normal for correlated processes (e.g., activation genes in PC2 and PC3)
+
+---
+
+### **In This Dataset**:
+
+- Check if recognizable immune markers appear in top loadings
+- If batch genes dominate early PCs → needs correction
+:::
 
 The function to plot loading genes only plots genes on the positive
 axes. Instead plot as heatmaps, with genes on both positive and
@@ -245,6 +408,7 @@ ordered by their position along the PC.
 **Loading plots reveal which genes drive each PC.** 
 
 Genes with high **positive loadings** are upregulated in cells on the positive end of that PC, while genes with high **negative loadings** are upregulated on the negative end. By examining the top loading genes:
+
 - You can interpret what biological process each PC represents
 - You can identify potential marker genes for cell populations
 - You can spot technical artifacts (e.g., if PC1 is dominated by mitochondrial genes, regression may have failed)
@@ -270,12 +434,113 @@ for pc in [1,2,3,4]:
     sc.pl.heatmap(tempdata, var_names = genes[sel].index.tolist(), groupby='predicted_doublets', swap_axes = True, use_raw=False)
 ```
 
+::: {.callout-tip}
+## What to Look For in PC Loading Heatmaps
+
+### **Expected Pattern** ✅
+
+**Clear gradient:**
+
+- **Left side**: Top 10 genes (positive loadings) high expression → low expression
+- **Right side**: Bottom 10 genes (negative loadings) low expression → high expression
+- Smooth transition from left to right across cells
+- Distinct blocks of red (high) and blue (low)
+
+**Biological interpretation:**
+
+- Can you identify the cell types on each end?
+- Example: PC1 might show T cell markers (left) vs. myeloid markers (right)
+
+---
+
+### **Problematic Patterns** 🚩
+
+**No gradient visible**:
+
+- 🚩 Random spotty pattern = PC not capturing coherent signal
+- May be normal for late PCs (noise)
+
+**Doublets enriched at extremes**:
+
+- 🚩 If doublet column shows many doublets at the far ends = doublets driving PC
+- **Action**: Check if doublet filtering was sufficient
+
+**All genes look similar**:
+
+- 🚩 Top and bottom genes show same pattern = PC not separating signal
+- **Action**: May need more PCs or different preprocessing
+
+---
+
+### **In This Dataset**:
+
+- Look for smooth gradients in early PCs (1-4)
+- Check if doublets cluster at one end (would indicate they're biological outliers)
+:::
+
 We can also plot the amount of variance explained by each PC.
 
 ```{python}
 #| label: pca-elbow
 sc.pl.pca_variance_ratio(adata, log=True, n_pcs = 50)
 ```
+
+::: {.callout-tip}
+## What to Look For in PCA Elbow Plot
+
+### **Expected Pattern** ✅
+
+**Classic elbow shape:**
+
+- **Early PCs (1-10)**: Steep decline - these capture major biological variation
+- **Middle PCs (10-30)**: Gradual decline - subtler signals, rare cell types
+- **Late PCs (30-50)**: Flat plateau - mostly noise
+
+**Interpretation:**
+
+- **"Elbow" point**: Where curve flattens (e.g., around PC10-15)
+- **Variance explained**:
+  - PC1: Often 5-15%
+  - Top 10 PCs: 30-60% combined
+  - Top 50 PCs: 70-90% combined
+
+**How many PCs to use?**
+
+- Traditional: Use PCs up to the elbow (~10-15)
+- Modern scRNA-seq: Use 20-50 PCs (even late PCs contain rare cell type signals)
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Very flat curve**:
+
+- 🚩 All PCs explain similar variance = no structure in data
+- **Action**: Check data quality, HVG selection, scaling
+
+**No elbow (steady decline)**:
+
+- 🚩 No clear transition = highly complex data or very noisy
+- Still use 30-50 PCs for scRNA-seq
+
+**PC1 explains >30% variance**:
+
+- 🚩 One dominant signal (often technical)
+- **Action**: Check PC1 loadings - likely batch effect or cell cycle
+
+**First 10 PCs explain <20% variance**:
+
+- 🚩 Weak signal = poor QC, insufficient HVGs, or very heterogeneous data
+- **Action**: Review preprocessing steps
+
+---
+
+### **In This Dataset**:
+
+- Look for the elbow around PC 10-15
+- Note that even PC30-50 may contain information about rare cell types (DCs, platelets)
+- Using 30-50 PCs for downstream analysis is recommended
+:::
 
 ::: {.callout-note}
 ## Why run this code?
@@ -304,10 +569,12 @@ We will now run [BH-tSNE](https://arxiv.org/abs/1301.3342).
 **tSNE (t-Distributed Stochastic Neighbor Embedding) creates a 2D map of your cells where similar cells are placed close together.** Think of it like creating a map of a city where neighborhoods with similar characteristics (residential, commercial, industrial) are grouped together, even if they're scattered across the actual city.
 
 tSNE is particularly good at:
+
 - **Preserving local structure**: Cells of the same type cluster tightly together
 - **Revealing clusters**: Different cell types appear as distinct "islands"
 
 However, **be cautious**: 
+
 - Distances between clusters are **not meaningful** (two clusters that look far apart may not be more different than two close clusters)
 - The same data can look different with different parameters (perplexity, iterations)
 - It's primarily a visualization tool, not an analysis tool
@@ -338,6 +605,69 @@ effect of batches present in the dataset.
 sc.pl.tsne(adata, color='sample')
 ```
 
+::: {.callout-tip}
+## What to Look For in tSNE Plots
+
+### **Expected Pattern** ✅
+
+**Good tSNE:**
+
+- **Distinct clusters**: Cell types form well-separated "islands"
+- **Tight clusters**: Cells of same type cluster closely
+- **Smooth boundaries**: Related cell types have fuzzy borders (transitional states)
+- **Scattered across space**: Uses the full 2D area (not all in one corner)
+
+**Biological structure:**
+
+- Major cell types visibly separated
+- Rare cell types may form small isolated clusters
+- Activated vs. resting states may form sub-clusters within a cell type
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Samples separate completely** (as in this dataset):
+
+- 🚩 Different colors (samples) in different regions = **strong batch effect**
+- Cells cluster by technical batch rather than biology
+- **Action**: Need batch correction before biological interpretation
+
+**All cells in one blob**:
+
+- 🚩 No separation = poor quality data or wrong parameters
+- **Action**: Increase perplexity, use more PCs, check HVG selection
+
+**"Starbursts" or "spokes"**:
+
+- 🚩 Cells radiate from center in lines = artifact of perplexity too low
+- **Action**: Increase perplexity (default=30, try 50-100)
+
+**Scattered individual cells everywhere**:
+
+- 🚩 No cluster structure = very noisy data or need different approach
+- **Action**: Check QC, may need more stringent filtering
+
+**Extremely tight clusters with huge gaps**:
+
+- 🚩 Over-clustered = perplexity too high or data too clean
+- Can be normal for very distinct cell types
+
+**Linear/curved arrangement**:
+
+- 🚩 May indicate trajectory/continuum (not always bad)
+- Example: Differentiation from stem cells to mature cells
+
+---
+
+### **In This Dataset**:
+
+- Clear separation visible (good)
+- **BUT samples cluster separately** = batch effect ⚠️
+- Need batch correction (next lab) before interpreting cell types
+- Don't trust cluster boundaries until batch corrected
+:::
+
 ## UMAP
 
 The UMAP implementation in SCANPY uses a neighborhood graph as the
@@ -353,6 +683,7 @@ distance matrix, so we need to first calculate the graph.
 3. Weight edges by similarity (closer neighbors = stronger edges)
 
 This graph representation:
+
 - Captures the **local structure** of the data (who is near whom)
 - Is used by UMAP for dimensionality reduction
 - Is also used for clustering (next lab)
@@ -374,6 +705,7 @@ embeddings.
 **UMAP (Uniform Manifold Approximation and Projection) is a newer alternative to tSNE** that also creates 2D visualizations of high-dimensional single-cell data.
 
 **UMAP advantages**:
+
 - **Preserves both local AND global structure**: Unlike tSNE, distances between clusters have some meaning
 - **Faster computation**: Especially for large datasets
 - **Deterministic**: More consistent results between runs
@@ -392,6 +724,7 @@ Both tSNE and UMAP are visualization tools—think of them as two different arti
 3. Optimize the low-dimensional layout to match the high-dimensional structure
 
 Key parameters:
+
 - `n_components`: Number of dimensions for embedding (default=2 for visualization)
 - `min_dist`: Minimum distance between points in the embedding (controls how tightly cells pack)
 - `random_state`: Ensures reproducibility
@@ -404,6 +737,68 @@ UMAP is based on mathematical theory from topology and Riemannian geometry, maki
 sc.tl.umap(adata, random_state=331)
 sc.pl.umap(adata, color='sample')
 ```
+
+::: {.callout-tip}
+## What to Look For in UMAP Plots
+
+### **Expected Pattern** ✅
+
+**Good UMAP:**
+
+- **Clear clusters**: Distinct cell types separated
+- **Connected structure**: Related cell types near each other (unlike tSNE's isolated islands)
+- **Smooth transitions**: Gradients between related states visible
+- **Biological topology**: T cells near NK cells, monocytes near DCs (related lineages)
+
+**Compared to tSNE:**
+
+- UMAP often more "connected" (fewer isolated islands)
+- Global distances more meaningful (far apart = more different)
+- Better for seeing differentiation trajectories
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Samples don't mix** (as in this dataset):
+
+- 🚩 Batch effect dominates = colors (samples) segregated
+- **Action**: Batch correction needed
+
+**Single long thin structure (worm/string)**:
+
+- 🚩 `min_dist` too low or data very homogeneous
+- **Action**: Increase `min_dist` from 0.3 to 0.5
+
+**Everything in one blob**:
+
+- 🚩 No separation = wrong neighbors parameter, poor data, or too homogeneous
+- **Action**: Decrease `n_neighbors` (try 10-15), use more PCs
+
+**Scattered "dust" cells everywhere**:
+
+- 🚩 Poorly connected graph or low-quality cells
+- **Action**: Check doublets, increase `n_neighbors`
+
+**Fractal/branching patterns**:
+
+- 🚩 Can be real (differentiation) or artifact
+- Check with marker genes to confirm biology
+
+**Differs drastically from tSNE**:
+
+- 🚩 If tSNE shows clear clusters but UMAP doesn't (or vice versa) = parameter issue
+- **Action**: Both should show similar major structure
+
+---
+
+### **In This Dataset**:
+
+- Some structure visible (good)
+- **Batch effects** present but less extreme than tSNE
+- Still need batch correction before biological interpretation
+- UMAP will likely work better than tSNE after correction
+:::
 
 UMAP is plotted colored per dataset. Although less distinct as in the
 tSNE, we still see quite an effect of the different batches in the data.
@@ -425,10 +820,60 @@ sc.pl.umap(umap10, color='sample', title="UMAP10",
 sc.pl.umap(adata, color='sample', title="UMAP", edges=True)
 ```
 
+::: {.callout-tip}
+## What to Look For in Multi-dimensional UMAP & Edge Plots
+
+### **10-component UMAP** ✅
+
+**Why useful:**
+
+- 2D UMAP compresses information → some structure lost
+- 10D UMAP retains more detail for clustering
+- Additional components show hidden structure
+
+**What to check:**
+
+- **UMAP3-4**: May separate cell subtypes not visible in UMAP1-2
+- **UMAP5-6**: Often rare cell populations
+- **Consistency**: Major clusters should remain clustered across components
+
+---
+
+### **Edge Plot** ✅
+
+**What edges show:**
+
+- Lines connect k-nearest neighbors (cells similar in PC space)
+- Dense edge networks = tight clusters
+- Bridges between clusters = transitional cells or doublets
+
+**Expected patterns:**
+
+- **Within clusters**: Many short edges (cells tightly connected)
+- **Between related cell types**: Some bridge edges (e.g., CD4 T cells ↔ CD8 T cells)
+- **Rare cells**: Fewer edges, may be isolated
+
+**Problematic patterns:**
+
+- 🚩 **No edges**: Graph not computed or `n_neighbors` too low
+- 🚩 **All cells connected to all others**: `n_neighbors` too high, no structure
+- 🚩 **Long edges everywhere**: Weak neighborhoods, poor graph quality
+- 🚩 **Isolated cells with no edges**: Outliers, doublets, or low quality cells
+
+---
+
+### **In This Dataset**:
+
+- Check if additional UMAP dimensions reveal sub-structure
+- Edge plot should show tight networks within clusters
+- Bridges between clusters may indicate related cell types or batch effects
+:::
+
 ::: {.callout-note}
 ## Why run this code?
 
 **10-component UMAP** projects cells into 10 dimensions instead of 2. This:
+
 - Retains **more information** than 2D (useful for downstream clustering)
 - Allows visualization of **additional dimensions** (UMAP3 vs UMAP4, UMAP5 vs UMAP6, etc.)
 - Can reveal structure not visible in the first two components
@@ -450,6 +895,55 @@ sc.pl.pca(adata, color='sample', components=['1,2'], ax=axs[0, 0], show=False)
 sc.pl.tsne(adata, color='sample', components=['1,2'], ax=axs[0, 1], show=False)
 sc.pl.umap(adata, color='sample', components=['1,2'], ax=axs[1, 0], show=False)
 ```
+
+::: {.callout-tip}
+## What to Look For: PCA vs. tSNE vs. UMAP Comparison
+
+### **Similarities (What Should Match)** ✅
+
+**Across all three methods, you should see:**
+
+- Same major cell populations cluster together
+- Same batch effects visible (if present)
+- Similar cell type relationships (which types are "close")
+
+**If drastically different:**
+
+- 🚩 One method may have failed or used wrong parameters
+- 🚩 Check input data, number of PCs, neighbors settings
+
+---
+
+### **Expected Differences** ✅
+
+**PCA:**
+
+- Linear projection → often shows gradients rather than discrete clusters
+- Cell types may overlap more
+- Best for: Understanding main axes of variation, QC
+
+**tSNE:**
+
+- Discrete "island" clusters
+- Large gaps between clusters (even related types)
+- Best for: Seeing distinct cell type separation
+
+**UMAP:**
+
+- More connected than tSNE, but still clear clusters
+- Preserves some global structure (related types closer)
+- Best for: Balance between cluster separation and trajectory visualization
+
+---
+
+### **In This Dataset**:
+
+- **All three show batch effects** = consistent signal that correction is needed
+- PCA: Samples separate along PC axes
+- tSNE: Samples form completely separate islands
+- UMAP: Samples partially separated but some mixing
+- **Conclusion**: Batch correction required before downstream analysis ⚠️
+:::
 
 Finally, we can compare the PCA, tSNE and UMAP.
 
@@ -490,6 +984,64 @@ By overlaying these markers on our UMAP/tSNE, we can **annotate** which clusters
 #| label: plot-markers
 sc.pl.umap(adata, color=["CD3E", "CD4", "CD8A", "GNLY","NKG7", "MS4A1","CD14","LYZ","CST3","MS4A7","FCGR3A"])
 ```
+
+::: {.callout-tip}
+## What to Look For in Marker Gene Plots
+
+### **Expected Pattern** ✅
+
+**Good marker expression:**
+
+- **Discrete regions** of high expression (red/yellow)
+- **Clear boundaries** between positive and negative populations
+- **Expected co-expression**: CD3E+ cells should also express either CD4 or CD8A
+- **Exclusive expression**: T cell markers (CD3E) should not overlap with B cell markers (MS4A1)
+
+**Identifying cell types:**
+
+- Look for **clusters** where markers are highly expressed
+- Check for **mutual exclusivity** (T cell markers vs. monocyte markers)
+- Verify **expected combinations** (CD14 + LYZ = monocytes)
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Markers everywhere**:
+
+- 🚩 Marker expressed uniformly across all cells = not a good marker or wrong gene
+- **Action**: Check gene name, try alternative markers
+
+**No expression anywhere**:
+
+- 🚩 Gene not detected or filtered out
+- **Action**: Check if gene is in HVG list or use `use_raw=True`
+
+**Multiple cell types express same marker**:
+
+- 🚩 May be normal (e.g., LYZ in monocytes AND some T cells)
+- Need additional markers to distinguish
+
+**Scattered individual cells**:
+
+- 🚩 Sparse expression pattern = low-abundance marker
+- May need deeper sequencing or different gene
+
+**Expression correlates with batch**:
+
+- 🚩 Marker high in one sample, low in others = batch effect or biological difference
+- Check if pattern matches sample distribution
+
+---
+
+### **In This Dataset**:
+
+- CD3E should mark T cell regions
+- CD14 should mark monocyte regions
+- MS4A1 should mark B cell regions
+- Check if these populations are separated or mixed due to batch effects
+- After batch correction, these patterns should become clearer
+:::
 
 The default is to plot gene expression in the normalized and
 log-transformed data. You can also plot it on the scaled and corrected
@@ -536,6 +1088,57 @@ the separation in your data is driven by quality of the cells?
 sc.pl.umap(adata, color=['n_genes_by_counts', 'total_counts', 'pct_counts_mt','pct_counts_ribo', 'pct_counts_hb'], ncols=3,use_raw=False)
 ```
 
+::: {.callout-tip}
+## What to Look For in QC Metric Plots
+
+### **Expected Pattern** ✅
+
+**Good quality control:**
+
+- QC metrics **evenly distributed** across UMAP
+- No clusters driven entirely by `pct_counts_mt` or `n_genes`
+- Gradients may exist but should not define major clusters
+
+**What's normal:**
+
+- Some variation in `n_genes_by_counts` across cell types (B cells vs. monocytes may differ)
+- `pct_counts_ribo` variation (plasma cells naturally high)
+- Slight gradients in `total_counts` (expected biological variation)
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Clusters driven by QC metrics**:
+
+- 🚩 One cluster has very high `pct_counts_mt` = low-quality cells not filtered
+- 🚩 One cluster has very low `n_genes` = may be empty droplets or damaged cells
+- **Action**: More stringent QC filtering needed
+
+**Strong correlation with batch**:
+
+- 🚩 One sample has systematically higher counts = technical batch effect
+- **Action**: Batch correction or normalize by sample
+
+**QC metrics segregate cell types**:
+
+- 🚩 If T cells all have low counts and monocytes high = confounded biology and quality
+- Makes it hard to distinguish technical from biological
+
+**Gradient aligns with UMAP structure**:
+
+- 🚩 If cells arrange by `n_genes` along UMAP axes = QC driving separation
+- **Action**: Regress out these variables or filter more strictly
+
+---
+
+### **In This Dataset**:
+
+- Check if low-quality regions remain after QC
+- Look for batch-specific QC patterns
+- If QC metrics explain UMAP structure → need better filtering/correction
+:::
+
 ## Save data
 
 We can finally save the object for use in future steps.
@@ -561,12 +1164,14 @@ values.
 After this workflow, your AnnData object contains **two different data representations**:
 
 **`adata.X`**: 
+
 - Contains only ~2,000-3,000 highly variable genes (columns)
 - Normalized, log-transformed, **regressed**, and **scaled** (Z-scored)
 - Mean = 0, standard deviation = 1 for each gene
 - Used for: PCA, clustering, heatmaps
 
 **`adata.raw.X`**:
+
 - Contains all ~20,000 genes (columns)
 - Normalized and log-transformed only
 - Preserves biological scale of expression

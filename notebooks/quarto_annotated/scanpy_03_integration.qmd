@@ -33,12 +33,14 @@ integration:
 **Batch effects are technical variation that can obscure real biological differences.** Imagine conducting a clinical trial where one hospital uses one thermometer brand and another hospital uses a different brand. If the thermometers are slightly miscalibrated, you might see temperature differences between hospitals that have nothing to do with the actual patients' health.
 
 Similarly in single-cell experiments:
+
 - Samples processed on **different days** may have different RNA degradation
 - Different **sequencing runs** may have different capture efficiencies
 - Different **experimenters** may introduce subtle handling differences
 - **COVID vs. control samples** might have been processed in different batches
 
 **Data integration (batch correction)** computationally removes these technical differences while preserving true biological variation. This allows us to:
+
 - Compare COVID-19 vs. control samples fairly
 - Identify cell types consistently across all samples
 - Detect disease-specific changes that aren't just batch artifacts
@@ -148,11 +150,13 @@ parameter.
 **The choice of variable genes affects which biological signals we preserve during integration.** Consider two scenarios:
 
 **Scenario 1: Variable genes from all data together**
+
 - May include genes that vary primarily *between batches* rather than between cell types
 - Example: A gene highly expressed in batch 1 but low in batch 2 due to technical differences
 - Risk: Integration might over-correct and remove real biological differences
 
 **Scenario 2: Variable genes per batch**
+
 - Identifies genes that vary *within* each batch (more likely to be biological)
 - Selects genes that distinguish cell types consistently across batches
 - More conservative, but safer for integration
@@ -195,6 +199,53 @@ print("Overlap: %d"%sum(var_genes_batch & var_genes_all))
 print("Variable genes in all batches: %d"%sum(adata.var.highly_variable_nbatches == 6))
 print("Overlap batch intersection and all: %d"%sum(var_genes_all & adata.var.highly_variable_intersection))
 ```
+
+::: {.callout-tip}
+## What to Look For in Batch-wise HVG Selection
+
+### **Expected Patterns** ✅
+
+**Good overlap:**
+
+- ~60-80% of genes variable in all data are also variable in individual batches
+- Most genes variable in 3+ batches
+- Intersection set (variable in ALL batches) contains key marker genes
+
+**Interpretation:**
+
+- **High overlap** = batch effects minimal, biology dominates variation
+- **Genes in all batches** = robust cell type markers
+- **Genes in 1-2 batches only** = likely batch-specific technical genes
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Very low overlap (<40%)**:
+
+- 🚩 Strong batch effects
+- 🚩 Different cell type compositions per batch
+- **Action**: May need more aggressive integration
+
+**Most genes variable in only 1-2 batches**:
+
+- 🚩 Batch-specific technical variation dominates
+- 🚩 Poor sample quality variation
+- **Action**: Use batch intersection genes only
+
+**Intersection nearly empty (<100 genes)**:
+
+- 🚩 Batches have completely different variable genes = very different biology or severe batch effects
+- **Action**: Check if samples are truly comparable
+
+---
+
+### **In This Dataset**:
+
+- Check how many genes are variable across all 8 samples
+- Higher overlap = easier integration
+- Lower overlap = need stronger batch correction
+:::
 
 ::: {.callout-important}
 ## Discuss
@@ -249,10 +300,12 @@ UMAP, tSNE and/or clustering.
 **BBKNN (Batch Balanced K-Nearest Neighbors) builds cell-to-cell connections while accounting for batch membership.** Think of it like creating a social network where you ensure each person has friends from different schools, not just their own school.
 
 In standard KNN:
+
 - Each cell finds its 20 nearest neighbors in gene expression space
 - Problem: Batch effects mean cells often find neighbors only from the same batch
 
 In BBKNN:
+
 - Each cell finds its nearest neighbors **from each batch separately**
 - If you have 8 batches and want 20 neighbors total, it finds ~2-3 neighbors per batch
 - This forces integration while preserving true biological neighbors
@@ -269,6 +322,7 @@ In BBKNN:
 2. **BBKNN**: Find top neighbors from *each batch independently* → batch-balanced
 
 The algorithm:
+
 - Trims the global KNN graph to remove batch-specific edges
 - Builds a batch-balanced graph by sampling neighbors proportionally from each batch
 - Returns a connectivity matrix that downstream tools (UMAP, Leiden clustering) can use
@@ -300,6 +354,69 @@ sc.pl.embedding(adata, "X_umap_bbknn",color="sample", title="BBKNN Corrected UMA
 sc.pl.embedding(adata, "X_tsne_bbknn",color="sample", title="BBKNN Corrected tSNE", ax=axs[1,1], show=False)
 ```
 
+::: {.callout-tip}
+## What to Look For in BBKNN Integration
+
+### **Successful Integration** ✅
+
+**Good batch mixing:**
+
+- Samples **intermingle** within clusters
+- Same cell types from different batches cluster together
+- No large sample-specific islands
+
+**Preserved biology:**
+
+- Distinct clusters still visible (cell types not over-mixed)
+- Expected cell type separations maintained
+- COVID vs. control differences preserved
+
+**Visual clues:**
+
+- Multiple colors (samples) within each cluster
+- Smooth transitions between related cell types
+- Similar structure in UMAP and tSNE
+
+---
+
+### **Integration Problems** 🚩
+
+**Under-correction:**
+
+- 🚩 Samples still form separate clusters
+- 🚩 Same as uncorrected plot
+- **Action**: Increase `neighbors_within_batch`, decrease `trim` parameter
+
+**Over-correction:**
+
+- 🚩 All samples perfectly mixed with no structure
+- 🚩 Loss of distinct cell type clusters
+- 🚩 Biological differences (COVID vs. control) lost
+- **Action**: Decrease `neighbors_within_batch`, increase `trim`
+
+**Partial correction:**
+
+- 🚩 Some samples mix well, others remain separate
+- May indicate one batch has very different cell composition
+- **Action**: Check sample quality, may need to exclude poor batches
+
+**Artificial clusters:**
+
+- 🚩 New small clusters appear that weren't in uncorrected data
+- May be integration artifacts
+- **Action**: Validate with marker genes
+
+---
+
+### **In This Dataset**:
+
+Compare uncorrected vs. BBKNN:
+
+- Do samples mix within clusters?
+- Are distinct populations (T cells, monocytes, B cells) still separated?
+- Does tSNE and UMAP show consistent improvement?
+:::
+
 Let's save the integrated data for further analysis.
 
 ```{python}
@@ -323,6 +440,7 @@ the PCA.
 **Harmony integrates data by iteratively adjusting cell positions in PCA space.** Imagine you have two overlapping photographs taken from slightly different angles. Harmony aligns them by finding common features and rotating/shifting one image to match the other.
 
 Harmony works by:
+
 1. **Clustering cells** in PCA space while accounting for batch
 2. **Calculating batch-specific centroids** for each cluster
 3. **Moving cells** toward the global cluster centroid, away from batch-specific positions
@@ -337,6 +455,7 @@ Harmony works by:
 **Harmony operates on low-dimensional embeddings (PCA) rather than raw gene expression:**
 
 The algorithm:
+
 1. Takes PCA coordinates as input (typically 30-50 PCs)
 2. Uses **fuzzy clustering** to assign cells to clusters with probabilities
 3. Calculates **batch correction factors** for each cluster
@@ -386,6 +505,61 @@ sc.pl.embedding(adata, 'X_umap_bbknn', color="sample", title="BBKNN UMAP", ax=ax
 sc.pl.umap(adata, color="sample", title="Harmony UMAP", ax=axs[1,1], show=False)
 ```
 
+::: {.callout-tip}
+## What to Look For: BBKNN vs. Harmony Comparison
+
+### **Comparing Methods** ✅
+
+**BBKNN characteristics:**
+
+- Often produces **tighter clusters**
+- Works on neighbor graph (discrete connections)
+- Can create sharper boundaries between cell types
+
+**Harmony characteristics:**
+
+- Often produces **smoother transitions**
+- Works on continuous PCA space
+- Better preserves trajectories and gradients
+
+**Both should show:**
+
+- Good batch mixing
+- Preserved cell type separation
+- Consistent major structure
+
+---
+
+### **Which Looks Better?** 🤔
+
+**BBKNN may be better if:**
+
+- You want well-separated, distinct clusters
+- Cell types are very different from each other
+- You're doing clustering-based analysis
+
+**Harmony may be better if:**
+
+- You expect continuous transitions (differentiation, activation states)
+- You want to preserve subtle biological gradients
+- You're doing trajectory analysis
+
+**Warning signs:**
+
+- 🚩 Methods give **completely different** results = unstable integration
+- 🚩 One method shows structure, other shows blob = parameter tuning needed
+- 🚩 Both show perfect mixing with no clusters = over-correction
+
+---
+
+### **In This Dataset**:
+
+- Do BBKNN and Harmony agree on major clusters?
+- Which preserves cell type separation better?
+- Which shows better batch mixing?
+- Consider your downstream analysis goals
+:::
+
 Let's save the integrated data for further analysis.
 
 ```{python}
@@ -411,6 +585,7 @@ already the case in this example).
 **ComBat was originally developed for microarray data and uses a different statistical approach.** Think of it like adjusting test scores from different teachers—one teacher might grade easier than another, so ComBat estimates and removes this "teacher effect" while preserving true differences in student ability.
 
 ComBat:
+
 1. **Models batch effects** using an empirical Bayes framework
 2. **Estimates batch-specific parameters** for each gene (mean and variance shifts)
 3. **Adjusts gene expression** by removing these batch-specific effects
@@ -425,12 +600,14 @@ ComBat:
 **ComBat works directly on the gene expression matrix:**
 
 The algorithm uses **empirical Bayes** to:
+
 1. **Standardize** each gene's expression across batches
 2. **Estimate batch parameters**: For each batch, calculate the mean shift and variance scaling for each gene
 3. **Pool information** across genes using empirical Bayes (assumes most genes have similar batch effects)
 4. **Adjust expression values**: Remove estimated batch effects from the count matrix
 
 **Important**: 
+
 - ComBat requires **dense matrices** (converts sparse to dense automatically)
 - Works on **normalized, log-transformed counts** (not raw counts)
 - Modifies `adata.X` directly with corrected values
@@ -479,6 +656,52 @@ print("With 2 batches %d"%sum(var_select))
 print("Overlap %d"%sum(var_genes_combat & var_select))
 ```
 
+::: {.callout-tip}
+## What to Look For in ComBat HVG Selection
+
+### **Expected Pattern** ✅
+
+**After ComBat correction:**
+
+- Number of HVGs should be **similar** to before (±20%)
+- High overlap with original HVGs (>70%)
+- HVGs should now reflect biology, not batch
+
+**Interpretation:**
+
+- **More HVGs after ComBat** = correction revealed masked biological variation
+- **Fewer HVGs** = removed batch-driven variation
+- **High overlap** = correction was subtle, preserved most signals
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Drastically different HVGs (<50% overlap)**:
+
+- 🚩 ComBat may have over-corrected
+- 🚩 Or original HVGs were dominated by batch effects
+- **Action**: Check if new HVGs make biological sense
+
+**Far fewer HVGs (<50% remaining)**:
+
+- 🚩 Over-correction removed too much variation
+- **Action**: Consider milder correction or check if batches are confounded with biology
+
+**Far more HVGs (>150%)**:
+
+- 🚩 ComBat may have introduced artifacts
+- **Action**: Inspect corrected data for unexpected patterns
+
+---
+
+### **In This Dataset**:
+
+- Check overlap with batch-aware HVGs
+- Higher overlap with batch-corrected selection = good
+- New HVGs should be interpretable biological markers
+:::
+
 We can now plot the unintegrated and the integrated space reduced
 dimensions.
 
@@ -490,6 +713,60 @@ sc.pl.tsne(adata_combat, color="sample", title="ComBat tSNE", ax=axs[0,1], show=
 sc.pl.umap(adata, color="sample", title="Harmony UMAP", ax=axs[1,0], show=False)
 sc.pl.umap(adata_combat, color="sample", title="ComBat UMAP", ax=axs[1,1], show=False)
 ```
+
+::: {.callout-tip}
+## What to Look For: Harmony vs. ComBat Comparison
+
+### **Key Differences** ✅
+
+**Harmony:**
+
+- Corrects PCA space (reduced dimensions)
+- Preserves gene expression values
+- Good for visualization and clustering
+
+**ComBat:**
+
+- Corrects gene expression directly
+- Changes actual count matrix
+- Good for differential expression analysis
+
+**Expected results:**
+
+- Both should show batch mixing
+- ComBat may show **stronger correction** (works on full expression matrix)
+- Harmony may preserve **subtle structure** better (works on major PCs only)
+
+---
+
+### **Integration Quality Assessment** 🔍
+
+**Good integration (both methods):**
+
+- Samples intermingle within cell type clusters
+- Cell type boundaries preserved
+- Similar overall structure between methods
+
+**ComBat-specific checks:**
+
+- Not overly smooth/homogeneous
+- Still see biological variation between cells
+- Marker genes still differentially expressed
+
+**Warning signs:**
+
+- 🚩 ComBat shows perfect mixing but loss of all structure = over-correction
+- 🚩 ComBat and Harmony give opposite results = unstable
+- 🚩 One sample completely separate in both = may have different biology
+
+---
+
+### **In This Dataset**:
+
+- ComBat should show stronger batch mixing
+- Check if cell types remain distinct
+- Consider which corrected data to use for downstream analysis
+:::
 
 Let's save the integrated data for further analysis.
 
@@ -523,6 +800,7 @@ we are not using it here.
 **Scanorama uses a "panorama stitching" approach inspired by computer vision.** When your phone creates a panorama photo, it finds overlapping regions between consecutive photos and aligns them. Scanorama does something similar with single-cell datasets.
 
 Scanorama:
+
 1. **Identifies matching cells** across datasets (mutual nearest neighbors in gene expression space)
 2. **Finds "anchor" cells** that appear in multiple batches—these are the "overlapping regions"
 3. **Aligns datasets** by correcting the expression of cells in each batch toward their cross-batch neighbors
@@ -537,6 +815,7 @@ Scanorama:
 **Scanorama requires splitting the data into separate objects per batch:**
 
 The workflow:
+
 1. **Split** the AnnData object into one object per sample/batch
 2. **Subset** each to the shared variable genes
 3. **Run `scanorama.integrate_scanpy()`**: 
@@ -616,6 +895,77 @@ sc.pl.embedding(adata, 'X_umap_harmony', color="sample", title="Harmony UMAP", a
 sc.pl.umap(adata, color="sample", title="Scanorama UMAP", ax=axs[1,1], show=False)
 ```
 
+::: {.callout-tip}
+## What to Look For: Harmony vs. Scanorama Comparison
+
+### **Method Characteristics** ✅
+
+**Harmony:**
+
+- Iterative correction in PCA space
+- Smooth, continuous adjustments
+- Fast, deterministic
+
+**Scanorama:**
+
+- Mutual nearest neighbor matching
+- Panorama-stitching approach
+- Good for heterogeneous datasets
+
+**Expected similarities:**
+
+- Both should show batch mixing
+- Major cell types should align similarly
+- Overall structure preserved
+
+---
+
+### **When They Differ** 🤔
+
+**Scanorama may perform better when:**
+
+- Batches have **different cell type compositions**
+- Some cell types missing from some batches
+- Very heterogeneous datasets
+
+**Harmony may perform better when:**
+
+- Batches have **similar compositions**
+- Continuous biological processes (differentiation)
+- Need to preserve subtle gradients
+
+**Red flags:**
+
+- 🚩 Completely different cluster arrangements = integration unstable
+- 🚩 One method shows clear structure, other doesn't = parameter issue
+- 🚩 Scanorama creates many tiny isolated clusters = over-fragmentation
+
+---
+
+### **Quality Checks:**
+
+**Both methods should:**
+
+- Mix samples within biological clusters
+- Preserve distinct cell types
+- Show similar major populations
+
+**Scanorama-specific:**
+
+- Check for artificial "bridge" populations between batches
+- Verify rare cell types aren't lost
+- Ensure matched cells make biological sense
+
+---
+
+### **In This Dataset**:
+
+- Do Harmony and Scanorama agree on cluster positions?
+- Which shows better batch mixing?
+- Which preserves biological structure better?
+- Check with marker genes in next section
+:::
+
 Let's save the integrated data for further analysis.
 
 ```{python}
@@ -644,6 +994,7 @@ Now we will plot UMAPs with all integration methods side by side.
 - **Under-correction**: If batches remain separate, technical effects persist
 
 **What to look for:**
+
 - Cells of the same type from different batches should cluster together
 - Distinct cell types should remain separated
 - COVID vs. control differences should be preserved (biological signal)
@@ -660,6 +1011,131 @@ sc.pl.embedding(adata, 'X_umap_harmony', color="sample", title="Harmony", ax=axs
 sc.pl.umap(adata, color="sample", title="Scanorama", ax=axs[1,1], show=False)
 ```
 
+::: {.callout-tip}
+## What to Look For: Comparing All Integration Methods
+
+### **Visual Comparison Checklist** ✅
+
+**For each method, assess:**
+
+1. **Batch mixing**: Are samples (colors) intermingled?
+2. **Cluster preservation**: Are distinct populations still separated?
+3. **Structure consistency**: Do all methods show similar major clusters?
+4. **Biological plausibility**: Does the layout make biological sense?
+
+---
+
+### **Integration Quality Spectrum** 📊
+
+**Under-corrected** ← → **Well-integrated** ← → **Over-corrected**
+
+**Under-corrected (left):**
+
+- Samples still separate
+- Batch effects dominate
+- Similar to uncorrected
+
+**Well-integrated (center):**
+
+- ✅ Samples mix within clusters
+- ✅ Cell types remain distinct
+- ✅ Biological signal preserved
+- ✅ Technical variation removed
+
+**Over-corrected (right):**
+
+- Perfect mixing, no structure
+- Loss of cell type separation
+- Biological differences erased
+
+---
+
+### **Method-Specific Patterns** 🔍
+
+**BBKNN:**
+
+- Often **tightest clusters**
+- Sharp boundaries
+- May create discrete islands
+
+**ComBat:**
+
+- Often **smoothest** integration
+- Risk of over-correction
+- Good batch mixing
+
+**Harmony:**
+
+- **Balanced** approach
+- Preserves gradients
+- Moderate mixing
+
+**Scanorama:**
+
+- Variable depending on data
+- **Good for heterogeneous** batches
+- May show some batch separation
+
+---
+
+### **Consensus Signals** 💡
+
+**Look for patterns that ALL methods agree on:**
+
+- ✅ Clusters present in all methods = robust biological populations
+- ✅ Consistent relationships between clusters = true biology
+- ⚠️ Features in only one method = may be artifacts
+
+**Warning signs:**
+
+- 🚩 **No consensus** on cluster number = unstable
+- 🚩 **Opposite arrangements** = severe methodological bias
+- 🚩 **One method completely different** = parameter failure
+
+---
+
+### **Decision Framework** 🎯
+
+**Choose integration method based on:**
+
+1. **Downstream analysis goals**:
+   - Clustering → BBKNN or Harmony
+   - Differential expression → ComBat
+   - Trajectory → Harmony or Scanorama
+   
+2. **Data characteristics**:
+   - Similar batches → Harmony
+   - Heterogeneous batches → Scanorama
+   - Strong batch effects → ComBat
+   
+3. **Biological questions**:
+   - Discrete cell types → BBKNN
+   - Continuous processes → Harmony
+   - Rare cell types → Scanorama
+
+4. **Validation**:
+   - Check with known marker genes (next step)
+   - Verify COVID vs. control signal preserved
+   - Test clustering stability
+
+---
+
+### **In This Dataset**:
+
+**Compare all 5 panels:**
+
+- Which shows best sample mixing?
+- Which preserves cell type structure best?
+- Which would you trust for biological interpretation?
+- Do any show obvious artifacts?
+
+**Consensus check:**
+
+- Are there clusters all methods agree on?
+- Do all methods separate major cell types (T, B, myeloid)?
+- Is there a clear "winner" or do different methods excel at different aspects?
+:::
+
 ::: {.callout-important}
 ## Discuss
 
@@ -668,11 +1144,15 @@ sc.pl.umap(adata, color="sample", title="Scanorama", ax=axs[1,1], show=False)
 - How do you think you could best evaluate if the integration worked well?
 
 **Evaluation strategies to consider:**
+
 - Visual inspection of batch mixing
 - Silhouette scores for batch vs. cell type clustering
 - Marker gene expression patterns
 - Preservation of biological differences (COVID vs. control)
 - Downstream analysis performance (clustering, differential expression)
+- Biological plausibility of results
+- Conservation of known cell type relationships
+- Metrics: mixing metric, kBET, LISI scores
 :::
 
 ## Extra task
@@ -706,6 +1186,24 @@ different parameters? Can you explain why?
   - Lower → more conservative integration
 
 Experiment with these to understand the bias-variance tradeoff in batch correction!
+
+**Suggested experiments:**
+
+```python
+# More aggressive correction
+sc.external.pp.bbknn(adata, 'sample', neighbors_within_batch=5, trim=10)
+
+# More conservative
+sc.external.pp.bbknn(adata, 'sample', neighbors_within_batch=3, trim=0)
+
+# Different distance metric
+sc.external.pp.bbknn(adata, 'sample', metric='cosine')
+
+# Different number of PCs
+sc.external.pp.bbknn(adata, 'sample', n_pcs=50)
+```
+
+Compare results visually and think about which settings work best for your data!
 :::
 
 ## Session info

@@ -22,23 +22,27 @@ with some modifications.
 **Trajectory inference reconstructs developmental pathways from snapshot single-cell data.** Imagine trying to understand how a caterpillar becomes a butterfly by examining many individuals at different life stages simultaneously, rather than watching one transform over time.
 
 **The biological challenge:**
+
 - Single-cell RNA-seq gives us a **snapshot** of cells at one moment
 - But biological processes are **dynamic**: development, differentiation, activation, disease progression
 - Cells exist along a continuum of states, not as discrete types
 - **Question**: Can we reconstruct temporal processes from spatial (gene expression) relationships?
 
 **Trajectory inference assumes:**
+
 1. **Developmental relationships**: Similar cells are at similar developmental stages
 2. **Gradual transitions**: Cells progress smoothly through gene expression states
 3. **Continuous processes**: Differentiation follows paths through gene expression space
 
 **Applications:**
+
 - **Development**: How do stem cells differentiate into specific cell types?
 - **Disease progression**: How do healthy cells transform into disease states?
 - **Cell activation**: How do resting immune cells become activated?
 - **Reprogramming**: How do differentiated cells revert to stem-like states?
 
 **Our example: Hematopoiesis**
+
 - **Hematopoietic stem cells (HSCs)** give rise to all blood cell types
 - Multiple lineages: erythrocytes (RBCs), megakaryocytes (platelets), myeloid cells (monocytes, granulocytes), lymphoid cells (T cells, B cells)
 - Well-characterized biology—perfect for testing trajectory methods
@@ -91,12 +95,14 @@ system which later circulate in the blood to all other organs.
 **Bone marrow contains the full spectrum of blood cell development**, making it ideal for trajectory inference:
 
 **Hematopoietic hierarchy:**
+
 1. **HSCs** (Hematopoietic Stem Cells): Self-renewing, multipotent
 2. **MPPs** (Multipotent Progenitors): Can become myeloid or lymphoid
 3. **Committed progenitors**: Lineage-restricted (e.g., erythroid, megakaryocyte)
 4. **Mature cells**: Fully differentiated (RBCs, platelets, immune cells)
 
 **Why bone marrow for trajectory inference?**
+
 - **All stages present simultaneously**: From stem cells to mature cells
 - **Well-characterized markers**: Known genes for each cell type
 - **Branching structure**: Multiple lineages from common origin
@@ -104,6 +110,7 @@ system which later circulate in the blood to all other organs.
 - **Biological ground truth**: Decades of research validate the developmental paths
 
 **Key cell types in our data:**
+
 - **HSCs/progenitors**: CD34+ cells
 - **Erythrocyte lineage**: Red blood cells (Alas2+)
 - **Megakaryocyte lineage**: Platelet precursors (Pf4+)
@@ -183,6 +190,58 @@ information from the previous analysis onto the UMAP.
 sc.pl.umap(adata, color = ['clusters','dataset','batches','Phase'],legend_loc = 'on data', legend_fontsize = 'xx-small', ncols = 2)
 ```
 
+::: {.callout-tip}
+## What to Look For in Initial Data Exploration
+
+### **Quality Checks Before Trajectory Analysis** ✅
+
+**Clusters:**
+
+- ✅ **Clear cell type separation**: Distinct populations visible
+- ✅ **Connected structure**: Related cell types adjacent (not scattered)
+- ✅ **Range of differentiation states**: From progenitors to mature cells
+- ✅ **No isolated outliers**: Cells form continuous regions
+
+**Dataset/Batch effects:**
+
+- ✅ **Well mixed**: Different datasets/batches intermingle
+- ✅ **No batch-driven clustering**: Clusters not defined by technical origin
+- 🚩 **Separated by batch**: Need better integration before trajectory
+
+**Cell cycle (Phase):**
+
+- ✅ **Distributed across cell types**: Some cycling cells expected in progenitors
+- ✅ **Not dominating structure**: Clusters not driven by G1 vs. S vs. G2M
+- 🚩 **One cluster all cycling**: May be artifact, check if real proliferative population
+
+---
+
+### **Trajectory-Specific Considerations** 🔍
+
+**Good starting point:**
+
+- ✅ **Continuous structure**: No large gaps between related cell types
+- ✅ **Branching visible**: Can see where lineages diverge
+- ✅ **Progenitor region present**: Clear starting point for trajectories
+- ✅ **Terminal types at periphery**: Mature cells at edges, progenitors central
+
+**Problematic patterns:**
+
+- 🚩 **Discrete islands**: Differentiation should be continuous
+- 🚩 **No clear progenitors**: Missing the trajectory origin
+- 🚩 **Batch-specific trajectories**: Technical artifact
+- 🚩 **Doublets**: Mixed-lineage cells can create false trajectories
+
+---
+
+### **In This Dataset**:
+
+- Are clusters well-separated and continuous?
+- Is there good batch mixing (successful integration)?
+- Can you visually identify progenitor vs. mature regions?
+- Does the UMAP topology look appropriate for trajectory analysis?
+:::
+
 It is crucial that anyone performing analysis of a dataset understands what
 is going on, what are the clusters you see in your data and most
 importantly, **how are the clusters related to each other?** Well, let's
@@ -208,6 +267,125 @@ markers = ["Cd34","Alas2","Pf4","Cpa3","Ltf","Cst3", "Siglech", "C1qc", "Ms4a1",
 sc.pl.umap(adata, color = markers, use_raw = False, ncols = 4)
 ```
 
+::: {.callout-tip}
+## What to Look For in Lineage Marker Expression
+
+### **Validating Cell Type Annotations** ✅
+
+**Expected patterns for each marker:**
+
+**Cd34 (HSC/progenitor):**
+
+- ✅ Should be **high in central/early region** of UMAP
+- ✅ Low in peripheral/mature cells
+- Identifies the **starting point** for trajectories
+
+**Lineage-specific markers (Alas2, Pf4, Ltf, Cst3, etc.):**
+
+- ✅ **High in specific regions** corresponding to that cell type
+- ✅ **Exclusive or semi-exclusive**: Minimal overlap with other lineages
+- ✅ **Peripheral location**: Mature cell types at edges, away from progenitors
+
+**Spatial arrangement:**
+
+- ✅ **Progenitors central**: Cd34+ cells in the middle
+- ✅ **Differentiated cells peripheral**: Mature types radiating outward
+- ✅ **Lineage separation**: Different lineages in different directions from center
+
+---
+
+### **Assessing Trajectory Structure** 🔍
+
+**Good trajectory structure:**
+
+**Erythroid lineage:**
+
+- ✅ Cd34 (progenitor) → Alas2 (erythrocyte)
+- Clear path from high Cd34 to high Alas2
+- Gradient of expression (intermediate cells)
+
+**Megakaryocyte lineage:**
+
+- ✅ Cd34 → Pf4 (megakaryocytes/platelets)
+- Should branch from erythroid or share early path (common MEP progenitor)
+
+**Myeloid lineages:**
+
+- ✅ Cd34 → Cst3 (monocytes) and Ltf (granulocytes)
+- May share common myeloid progenitor region
+- Then diverge to specific cell types
+
+**Lymphoid lineages:**
+
+- ✅ Cd34 → Cd3e (T cells) or Ms4a1 (B cells)
+- Should be separate from myeloid branch
+
+---
+
+### **Red Flags** 🚩
+
+**Marker expression problems:**
+
+- 🚩 **No Cd34 expression**: Missing progenitor population
+- 🚩 **Cd34 high everywhere**: Failed filtering of progenitors
+- 🚩 **Lineage markers overlap**: Alas2+ and Ms4a1+ same cells = doublets
+- 🚩 **Markers scattered randomly**: Poor data quality or wrong markers
+
+**Structural problems:**
+
+- 🚩 **Multiple separate Cd34 regions**: Fragmented progenitor population
+- 🚩 **Mature cells in center**: Topology doesn't support differentiation model
+- 🚩 **No gradients**: Sharp boundaries suggest discrete types, not trajectories
+- 🚩 **Impossible connections**: Direct path between unrelated lineages (T cells → erythrocytes)
+
+---
+
+### **Building the Biological Map** 🗺️
+
+**Use marker expression to:**
+
+1. **Identify progenitor region** (Cd34+)
+2. **Map each lineage** (where does each marker locate?)
+3. **Infer branching points** (where do gradients diverge?)
+4. **Validate known biology** (do paths match hematopoiesis diagram?)
+
+**Expected hematopoietic structure:**
+
+```
+        HSC (Cd34+)
+        /         \
+    Myeloid     Lymphoid
+    /    \        /    \
+   Mono  Gran   T cells B cells
+   (Cst3)(Ltf)  (Cd3e)  (Ms4a1)
+  
+  Eryth-Mega branch:
+  HSC → MEP → Erythrocyte (Alas2)
+            → Megakaryocyte (Pf4)
+```
+
+---
+
+### **In This Dataset**:
+
+**Map each marker to clusters:**
+
+- Which clusters are Cd34+ (progenitors)?
+- Which are Alas2+ (erythrocytes)?
+- Which are Pf4+ (megakaryocytes)?
+- Which are Cst3+ (monocytes)?
+- Which are Ltf+ (granulocytes)?
+- Which are Ms4a1+ (B cells)?
+- Which are Cd3e+ (T cells)?
+
+**Check biological plausibility:**
+
+- Are lineage markers mutually exclusive (no Alas2+/Ms4a1+ cells)?
+- Is there a clear progenitor → differentiated gradient?
+- Do related lineages (erythrocyte/megakaryocyte) appear near each other?
+- Does the arrangement match the hematopoiesis diagram?
+:::
+
 ## Rerun analysis in Scanpy
 
 Redo clustering and UMAP using the basic Scanpy pipeline. Use the
@@ -220,17 +398,20 @@ point.
 **We reprocess the data in Scanpy to ensure consistency and optimize for trajectory inference:**
 
 **Why recalculate neighbors and UMAP?**
+
 - The data was preprocessed in Seurat with different parameters
 - PAGA works best with Scanpy's neighbor calculation
 - We can optimize parameters (n_neighbors, UMAP settings) for trajectory visualization
 - Ensures reproducibility within the Scanpy ecosystem
 
 **Using `X_harmony_Phase` as input:**
+
 - Batch-corrected embedding that accounts for dataset and cell cycle effects
 - Removes technical variation while preserving biological trajectories
 - Better starting point than raw PCA for multi-sample data
 
 **Why calculate highly variable genes?**
+
 - Even though we won't use them immediately, we need mean expression and dispersion for each gene
 - This metadata is used by downstream trajectory analysis tools
 - Helps identify genes driving differentiation
@@ -263,22 +444,103 @@ sc.tl.leiden(adata, key_added = "leiden_1.4", resolution = 1.4, random_state=137
 sc.pl.umap(adata, color = ['leiden_1.0', 'leiden_1.2', 'leiden_1.4','clusters'],legend_loc = 'on data', legend_fontsize = 'xx-small', ncols =2)
 ```
 
+::: {.callout-tip}
+## What to Look For in Reclustered Data
+
+### **Edge Visualization** ✅
+
+**What edges show:**
+
+- Lines connect k-nearest neighbors
+- Dense edges = tight cellular neighborhoods
+- Bridges between regions = potential trajectories
+
+**Good trajectory structure:**
+
+- ✅ **Edges connect related cell types**: Progenitors → committed cells
+- ✅ **Gradual transitions**: Dense edges along differentiation paths
+- ✅ **Few spurious bridges**: No connections between unrelated lineages
+- ✅ **Central progenitor hub**: Many edges radiating from Cd34+ region
+
+**Problematic patterns:**
+
+- 🚩 **Edges between impossible cell types**: Erythrocytes ↔ T cells
+- 🚩 **Isolated clusters**: No edges to rest of data (will create trajectory gaps)
+- 🚩 **Over-connected**: All clusters connected to all others (not informative)
+
+---
+
+### **Clustering Resolution for Trajectories** 🔍
+
+**Resolution 1.0 (coarse):**
+
+- Broad cell types
+- May miss lineage branching points
+- Good for: Overview of major lineages
+
+**Resolution 1.2 (medium):**
+
+- Balance between detail and simplicity
+- Captures main lineages and some subtypes
+- **Often optimal for trajectory inference**
+
+**Resolution 1.4 (fine):**
+
+- Many small clusters
+- Can capture fine-grained states
+- Risk: Over-splitting continuous processes
+- Good for: Detailed lineage analysis
+
+**Which to choose?**
+
+- Too low: Miss important branch points
+- Too high: Fragment continuous differentiation
+- **Sweet spot**: Separates known lineages without excessive fragmentation
+- **For hematopoiesis**: 1.2-1.4 typically works well
+
+---
+
+### **Validation with Markers** ✅
+
+**After reclustering, verify:**
+
+- Do clusters still separate by markers?
+- Are known lineages in distinct clusters?
+- Is Cd34+ region still identifiable?
+- Are transitions still continuous (edges connect developmental paths)?
+
+---
+
+### **In This Dataset**:
+
+**Compare different resolutions:**
+
+- Which resolution best separates known lineages?
+- At what resolution do erythrocytes and megakaryocytes split?
+- Are any clusters inappropriately split or merged?
+- Do the edges look biologically plausible?
+- Choose resolution that balances biological detail with trajectory clarity
+:::
+
 ::: {.callout-note}
 ## Why run this code?
 
 **Clustering resolution affects trajectory inference significantly:**
 
 **Different resolutions reveal different biological scales:**
+
 - **Low resolution (1.0)**: Broad cell types (myeloid vs. lymphoid)
 - **Medium resolution (1.2)**: Lineage-committed progenitors
 - **High resolution (1.4)**: Detailed cell states and subtypes
 
 **For trajectory inference, we want:**
+
 - Enough resolution to separate distinct lineages
 - Not so much that we over-split continuous populations
 - Balance between biological detail and interpretability
 
 **The edges (`edges=True`):**
+
 - Show the k-nearest neighbor graph connections
 - Reveal which clusters are neighbors in gene expression space
 - Help validate that trajectories follow biological paths
@@ -316,6 +578,111 @@ annot.value_counts()
 sc.pl.embedding(adata, basis='X_umap_old', color = 'annot',legend_loc = 'on data', legend_fontsize = 'xx-small', ncols =2)
 ```
 
+::: {.callout-tip}
+## What to Look For in Annotated UMAP
+
+### **Annotation Quality** ✅
+
+**Good annotations:**
+
+- ✅ **All major lineages labeled**: Progenitors, myeloid, lymphoid, erythroid, megakaryocyte
+- ✅ **Spatial coherence**: Same annotation forms contiguous regions
+- ✅ **Unlabeled clusters**: Some ambiguous clusters left unlabeled (conservative approach)
+- ✅ **Biologically sensible arrangement**: Related lineages adjacent
+
+**Cell type distribution:**
+
+- **3 progenitor clusters**: 0_progen, 7_progen, 9_progen (may represent different progenitor states/stages)
+- **Multiple differentiated types**: Should see full range of hematopoietic lineages
+- **Unlabeled clusters**: May be intermediate states, will be investigated further
+
+---
+
+### **Biological Validation** 🔍
+
+**Lineage relationships:**
+
+**Erythroid-Megakaryocyte:**
+
+- 12_eryth and 10_megakaryo should be **adjacent** (share MEP progenitor)
+- Both should connect to progenitor region
+
+**Myeloid lineages:**
+
+- 5_mono (monocytes) and 2_gran (granulocytes) should be **near each other**
+- Both connect to progenitors via GMP intermediate
+
+**Lymphoid:**
+
+- 14_TC (T cells) and 15_BC (B cells) may be adjacent or separate
+- Should branch from progenitors separately from myeloid
+
+**Special types:**
+
+- 13_mast_baso: Often separate lineage
+- 17_dend: Can arise from multiple progenitors
+- 16_macro: Related to monocytes
+
+---
+
+### **Unlabeled Clusters** 🤔
+
+**Why leave some unlabeled?**
+
+- ✅ **Conservative**: Better to leave uncertain than mis-annotate
+- ✅ **May be transitional states**: Between progenitor and differentiated
+- ✅ **May be mixed**: Heterogeneous populations
+- ✅ **Will investigate**: Can refine later based on trajectory analysis
+
+**What unlabeled clusters might be:**
+
+- **Intermediate progenitors**: CMP, MEP, GMP stages
+- **Transition states**: Actively differentiating cells
+- **Mixed quality**: Technical artifacts
+- **Novel populations**: Unexpected biology
+
+---
+
+### **Comparing UMAPs** 🔍
+
+**New Scanpy UMAP vs. Original Seurat UMAP:**
+
+**Should be similar:**
+
+- ✅ Same major structure
+- ✅ Same cell type positions
+- ✅ Annotations work on both
+
+**Minor differences expected:**
+
+- Different algorithms/parameters
+- Different spread and spacing
+- Potentially different orientations (rotated/flipped)
+
+**Major differences problematic:**
+
+- 🚩 Completely different structure = processing issue
+- 🚩 Annotations don't transfer = failed reprocessing
+
+---
+
+### **In This Dataset**:
+
+**Check annotations:**
+
+- Can you identify all annotated cell types on the UMAP?
+- Do they match the marker gene expression from previous plot?
+- Do the 3 progenitor clusters all express Cd34?
+- Are differentiated cell types (eryth, mega, mono, TC, BC) at the periphery?
+- Which clusters remain unlabeled? Can you hypothesize what they might be?
+
+**Biological sanity check:**
+
+- Does the arrangement match hematopoietic hierarchy?
+- Are impossible cell type combinations avoided?
+- Can you visually trace paths from progenitors to each mature type?
+:::
+
 ## Run PAGA
 
 Use the clusters from Leiden clustering with `leiden_1.4` and run PAGA.
@@ -329,22 +696,26 @@ positions using the UMAP.
 **PAGA (Partition-based Graph Abstraction) is specifically designed for trajectory inference** and addresses key limitations of UMAP/tSNE for understanding developmental processes.
 
 **Why UMAP/tSNE can mislead for trajectories:**
+
 - **Distorts global relationships**: Preserves local neighborhoods but distorts long-range distances
 - **Can create false gaps**: Continuous processes may appear disconnected
 - **Can create false connections**: Unrelated populations may appear adjacent
 
 **What PAGA does:**
+
 1. **Abstraction**: Represents each cluster as a node in a graph
 2. **Connectivity**: Computes statistical confidence for edges between clusters
 3. **Topology**: Reveals the global structure (linear, branching, cyclic)
 4. **Interpretability**: Graph structure directly represents biological relationships
 
 **PAGA edges represent:**
+
 - **Strength**: Number of cells connecting two clusters (edge thickness)
 - **Confidence**: Statistical significance of connection
 - **Direction** (optional): With RNA velocity or pseudotime ordering
 
 **Applications:**
+
 - Visualizing complex, branching differentiation processes
 - Identifying lineage relationships
 - Guiding downstream trajectory analysis
@@ -359,6 +730,91 @@ sc.pl.draw_graph(adata, color='annot', legend_loc='on data', legend_fontsize = '
 sc.tl.paga(adata, groups='annot')
 sc.pl.paga(adata, color='annot', edge_width_scale = 0.3)
 ```
+
+::: {.callout-tip}
+## What to Look For in Initial PAGA Graph
+
+### **Understanding PAGA Visualization** 📊
+
+**Nodes:**
+
+- Each **circle** = a cluster/cell type
+- **Node size**: Number of cells in that cluster
+- **Node color**: Cell type (matches annotation)
+- **Node position**: Optimized to show relationships
+
+**Edges:**
+
+- **Lines** between nodes = statistical connections
+- **Edge thickness**: Connectivity strength (more cells transitioning)
+- **Thicker edges**: Stronger relationship (more shared neighbors)
+
+**Expected for hematopoiesis:**
+
+- ✅ **Central progenitor node**: 0_progen, 7_progen, 9_progen connected
+- ✅ **Lineage branches**: Edges radiating to different mature types
+- ✅ **Related types connected**: 12_eryth ↔ 10_megakaryo (share MEP)
+- ✅ **No impossible edges**: B cells should NOT connect directly to erythrocytes
+
+---
+
+### **Quality of Initial PAGA** 🔍
+
+**As noted in text: "we have edges between many clusters that we know are unrelated"**
+
+**Problematic edges (spurious connections):**
+
+- 🚩 **T cells ↔ Erythrocytes**: Biologically impossible direct transition
+- 🚩 **Over-connected graph**: Every cluster connected to every other
+- 🚩 **Weak biological signal**: True developmental paths obscured by noise
+
+**Why this happens:**
+
+- **Too many neighbors** (n_neighbors=20 initially): Creates over-connected graph
+- **Technical variation**: Batch effects create false similarities
+- **Clustering resolution**: May need adjustment
+
+**Solution:**
+
+- Reduce n_neighbors to strengthen signal-to-noise
+- Prune weak edges
+- Recalculate graph
+
+---
+
+### **Expected Hematopoietic PAGA Structure** 🗺️
+
+**Should look like:**
+
+```
+                Progenitors (0,7,9)
+                    /    |    \
+                   /     |     \
+             Myeloid  Eryth-Mega  Lymphoid
+             /    \      / \      /     \
+          Mono  Gran  Ery Mega   T      B
+```
+
+**Key features:**
+
+- **Central hub**: Progenitor clusters highly connected
+- **Branching**: Clear divergence points (myeloid vs. lymphoid, erythroid vs. megakaryocyte)
+- **Terminal leaves**: Differentiated types at graph periphery
+- **No cycles**: Differentiation is unidirectional
+- **No shortcuts**: No direct mature-to-mature connections
+
+---
+
+### **In This Dataset (Initial PAGA)**:
+
+**Check the graph:**
+
+- Is there a central progenitor region?
+- Can you trace paths from progenitors to each mature type?
+- Are there biologically impossible edges?
+- Is the graph over-connected (too messy)?
+- **Needs improvement** → reduce neighbors
+:::
 
 As you can see, we have edges between many clusters that we know are
 unrelated, so we may need to clean up the data a bit more.
@@ -387,24 +843,28 @@ analysis for this dataset, as the graph becomes too sparse.
 **The number of neighbors (`n_neighbors`) critically affects graph connectivity and trajectory quality:**
 
 **Too many neighbors (>20):**
+
 - Graph becomes over-connected
 - Unrelated cell types appear connected
 - Spurious edges create biologically implausible trajectories
 - Example: Direct connections between T cells and erythrocytes (biologically impossible)
 
 **Too few neighbors (<5):**
+
 - Graph becomes fragmented
 - True biological transitions are lost
 - Cells become isolated
 - Cannot trace continuous developmental paths
 
 **Optimal neighbors for trajectory inference:**
+
 - **Goldilocks zone**: Typically 5-15 neighbors
 - Connects cells along true developmental paths
 - Minimizes spurious connections
 - Balance: biological continuity vs. specificity
 
 **How to choose:**
+
 - Visualize edges on UMAP
 - Check if connected clusters are biologically plausible
 - Verify known lineage relationships are preserved
@@ -418,6 +878,81 @@ We're reducing from 20 to 8 neighbors to remove spurious edges while maintaining
 sc.pp.neighbors(adata, n_neighbors=8,  use_rep = 'X_harmony_Phase', n_pcs = 30, random_state=159)
 sc.pl.umap(adata, edges=True, color = 'annot', legend_loc= 'on data', legend_fontsize= 'xx-small')
 ```
+
+::: {.callout-tip}
+## What to Look For After Reducing Neighbors
+
+### **Improved Graph Structure** ✅
+
+**Expected improvements:**
+
+- ✅ **Fewer edges**: Cleaner, less cluttered
+- ✅ **Stronger signal**: Edges connect truly related cell types
+- ✅ **Biological paths clearer**: Can trace lineage trajectories
+- ✅ **Spurious connections removed**: Unrelated clusters no longer connected
+
+**Quality checks:**
+
+**Within-cluster edges:**
+
+- ✅ Dense edge networks within each annotated region
+- ✅ Cells of same type well-connected
+
+**Between-cluster edges:**
+
+- ✅ **Progenitors → differentiated**: Clear paths
+- ✅ **Related lineages connected**: Erythrocyte ↔ megakaryocyte
+- ✅ **Unrelated lineages separated**: Minimal T cell ↔ erythrocyte edges
+
+---
+
+### **Biological Validation** 🔍
+
+**Expected connections:**
+
+- ✅ 0_progen ↔ most other clusters (HSCs can become anything)
+- ✅ 12_eryth ↔ 10_megakaryo (share MEP progenitor)
+- ✅ 5_mono ↔ 2_gran (share GMP progenitor)
+- ✅ 5_mono ↔ 16_macro (monocytes can become macrophages)
+
+**Unexpected connections (should be minimal):**
+
+- 🚩 14_TC ↔ 12_eryth (lymphoid ↔ erythroid: impossible)
+- 🚩 15_BC ↔ 10_megakaryo (B cell ↔ platelet: impossible)
+
+---
+
+### **Graph Density** 🔍
+
+**Too sparse (if you go <8 neighbors):**
+
+- Fragmented clusters
+- Missing true developmental connections
+- Isolated cells
+
+**Well-balanced (8 neighbors):**
+
+- ✅ Connected within lineages
+- ✅ Appropriate bridges between related types
+- ✅ Minimal spurious long-range edges
+
+**Still too dense (if this doesn't help):**
+
+- May need <8 neighbors
+- Or stricter edge filtering in PAGA
+
+---
+
+### **In This Dataset**:
+
+**Compare to previous plot (20 neighbors):**
+
+- Are there fewer total edges?
+- Are spurious long-distance connections reduced?
+- Can you visually trace biologically plausible differentiation paths?
+- Are progenitor-to-mature connections preserved?
+- Ready for PAGA analysis?
+:::
 
 ### Rerun PAGA again on the data
 
@@ -433,6 +968,125 @@ sc.tl.paga(adata, groups='annot')
 sc.pl.paga(adata, color='annot', edge_width_scale = 0.3)
 ```
 
+::: {.callout-tip}
+## What to Look For in Improved PAGA Graph
+
+### **PAGA Graph Quality** ✅
+
+**Good PAGA structure:**
+
+- ✅ **Tree-like topology**: Branching from common root (not cycles or meshes)
+- ✅ **Central progenitors**: 0_progen, 7_progen, 9_progen form hub
+- ✅ **Clear lineage branches**: Distinct paths to each mature type
+- ✅ **Edge thickness reflects biology**: Stronger connections for known relationships
+- ✅ **Few/no spurious edges**: Biologically implausible connections minimized
+
+**Expected hematopoietic PAGA:**
+
+**Primary branches:**
+
+1. **Erythroid-Megakaryocyte branch**:
+   - Progenitors → 12_eryth
+   - Progenitors → 10_megakaryo
+   - **Thick edge** between 12_eryth and 10_megakaryo (close relationship)
+
+2. **Myeloid branch**:
+   - Progenitors → 5_mono
+   - Progenitors → 2_gran
+   - Possibly → 16_macro (from monocytes)
+   - Possibly → 17_dend
+
+3. **Lymphoid branch**:
+   - Progenitors → 14_TC
+   - Progenitors → 15_BC
+   - Should be **separate** from myeloid/erythroid
+
+4. **Mast/Basophil**:
+   - 13_mast_baso may connect directly to progenitors
+
+---
+
+### **Graph Topology Interpretation** 🔍
+
+**Node positions:**
+
+- **Center**: Multipotent progenitors
+- **Radiating outward**: Increasingly differentiated
+- **Periphery**: Fully differentiated types
+
+**Edge patterns:**
+
+- **Thick edges**:
+  - From progenitors to major lineages (high cell flux)
+  - Between closely related types (eryth ↔ mega)
+- **Thin edges**:
+  - Between distantly related types
+  - Low transition probabilities
+- **No edge**:
+  - Unrelated cell types
+  - No direct developmental connection
+
+**Multiple progenitor clusters:**
+
+- 0_progen, 7_progen, 9_progen may represent:
+  - Different progenitor stages (HSC → MPP → lineage-restricted)
+  - Different cell cycle states
+  - Technical over-clustering
+- **Check**: Do they all connect similarly to downstream lineages?
+
+---
+
+### **Quality Assessment** 🔍
+
+**Excellent PAGA:**
+
+- Matches known hematopoietic hierarchy perfectly
+- No biologically impossible edges
+- Clear branching points
+- Symmetric edge weights for bidirectional relationships
+
+**Good PAGA:**
+
+- Major lineages correct
+- Most edges biologically sensible
+- Minor spurious edges can be ignored
+
+**Poor PAGA:**
+
+- Many impossible connections remain
+- No clear structure
+- Doesn't match known biology
+- **Action**: Further parameter optimization needed
+
+---
+
+### **Biological Validation Questions** ✅
+
+**Check against known biology:**
+
+1. **Do erythrocytes and megakaryocytes share a path?** (Should: common MEP)
+2. **Are lymphoid types separated from myeloid?** (Should: early lineage split)
+3. **Do monocytes connect to macrophages?** (Should: monocytes differentiate to macrophages)
+4. **Are there direct mature-to-mature connections?** (Shouldn't: differentiation is unidirectional)
+
+---
+
+### **In This Dataset**:
+
+**Examine the PAGA graph:**
+
+- Can you identify the progenitor hub?
+- Can you trace the path from progenitors to:
+  - Erythrocytes?
+  - Megakaryocytes?
+  - Monocytes?
+  - T cells?
+  - B cells?
+- Are there any remaining impossible edges?
+- Does the overall structure match the hematopoiesis diagram from earlier?
+- Is this graph better than the initial attempt (fewer spurious edges)?
+:::
+
 ## Embedding using PAGA-initialization
 
 We can now redraw the graph using another starting position from the
@@ -444,18 +1098,21 @@ PAGA layout. The following is just as well possible for a UMAP.
 **PAGA-initialized embeddings improve trajectory visualization:**
 
 **Standard UMAP initialization:**
+
 - Random or spectral initialization
 - Optimizes for local neighborhood preservation
 - Can distort global structure
 - May place related clusters far apart
 
 **PAGA-initialized layout:**
+
 - Uses PAGA graph structure as initial positions
 - Places connected clusters close together
 - Preserves developmental relationships
 - Reveals lineage structure more clearly
 
 **Result:**
+
 - Cells are embedded respecting their lineage relationships
 - Progenitors appear central, differentiated cells peripheral
 - Branching points are visually apparent
@@ -470,6 +1127,104 @@ sc.tl.draw_graph(adata, init_pos='paga')
 sc.pl.draw_graph(adata, color=['annot'], legend_loc='on data', legend_fontsize=  'xx-small')
 ```
 
+::: {.callout-tip}
+## What to Look For in PAGA-Initialized Layout
+
+### **PAGA Layout Characteristics** ✅
+
+**Expected structure:**
+
+- ✅ **Tree-like or star-like arrangement**: Branches radiating from center
+- ✅ **Progenitors central**: Cd34+ cells in the middle
+- ✅ **Lineages radiate outward**: Each mature type in a different direction
+- ✅ **Smooth gradients**: Continuous color transitions along branches
+- ✅ **Clear bifurcations**: Can see where lineages split
+
+**Advantages over standard UMAP:**
+
+- **Preserves PAGA topology**: Global structure from graph reflected in layout
+- **Interpretable distances**: Proximity reflects developmental relationships
+- **Reveals branching**: Bifurcation points visually clear
+- **Emphasizes trajectories**: Paths from root to leaves apparent
+
+---
+
+### **Comparing to Standard UMAP** 🔍
+
+**PAGA-initialized should:**
+
+- ✅ Show **clearer lineage structure**
+- ✅ Progenitors more obviously central
+- ✅ Branching points more distinct
+- ✅ Terminal types well-separated
+
+**May look different:**
+
+- Different overall shape (more "spoked" or tree-like)
+- Different orientation (rotated/flipped)
+- More spread out or compact
+- **But**: Same biological relationships
+
+**If very different from standard UMAP:**
+
+- Suggests UMAP was distorting global structure
+- PAGA layout more faithful to developmental relationships
+- **Use PAGA layout** for trajectory visualization and interpretation
+
+---
+
+### **Validating Biological Structure** 🔍
+
+**Check each lineage path:**
+
+**Erythrocyte trajectory:**
+
+- Can you trace: Progenitors → intermediate → 12_eryth?
+- Is path continuous (smooth gradient)?
+- Is 10_megakaryo nearby (shared MEP)?
+
+**Myeloid trajectories:**
+
+- Progenitors → 5_mono (monocytes)?
+- Progenitors → 2_gran (granulocytes)?
+- 5_mono → 16_macro (monocyte to macrophage)?
+
+**Lymphoid trajectories:**
+
+- Progenitors → 14_TC (T cells)?
+- Progenitors → 15_BC (B cells)?
+- Separate from myeloid/erythroid branches?
+
+---
+
+### **Red Flags** 🚩
+
+**Biological impossibilities:**
+
+- 🚩 Mature types in center (should be peripheral)
+- 🚩 Unrelated lineages overlapping
+- 🚩 Lymphoid cells on myeloid branches
+- 🚩 Cyclic structure (differentiation should be directional)
+
+**Technical issues:**
+
+- 🚩 Completely different from UMAP (suggests one is very wrong)
+- 🚩 No clear structure (blob without branches)
+- 🚩 Fragmented (disconnected components)
+
+---
+
+### **In This Dataset**:
+
+**Compare PAGA layout to standard UMAP:**
+
+- Is the tree structure clearer in PAGA layout?
+- Can you better visualize lineage relationships?
+- Are branching points more obvious?
+- Does this layout better match the hematopoiesis diagram?
+- Which layout would you use for presenting trajectory results?
+:::
+
 We can now compare the two graphs. On the left, each cell is embedded on
 our PAGA graph, whereas on the right, each cluster of cells is
 represented as a node in the graph and each edge represents the
@@ -482,12 +1237,141 @@ sc.pl.paga_compare(
     legend_fontsize=12, fontsize=12, frameon=False, edges=True)
 ```
 
+::: {.callout-tip}
+## What to Look For in PAGA Compare Plot
+
+### **Understanding the Dual Visualization** 📊
+
+**Left panel: Cell-level graph (force-directed layout)**
+
+- Shows **individual cells** positioned by PAGA structure
+- **Edges**: k-nearest neighbor connections between cells
+- Reveals **cell-level continuity** along trajectories
+
+**Right panel: Abstract PAGA graph**
+
+- Shows **clusters as nodes**
+- **Edges**: Statistical confidence of cluster connectivity
+- Reveals **global topology** (branching structure)
+
+---
+
+### **Integration of Both Views** ✅
+
+**Good correspondence:**
+
+- ✅ **Cell positions match graph structure**: Cells from connected clusters physically close
+- ✅ **Continuous paths visible**: Can trace from progenitors to mature types on left, matches graph on right
+- ✅ **Branching points clear**: Can see where trajectories diverge in both views
+- ✅ **Edge agreement**: Cell-level edges predominantly within/between connected clusters
+
+---
+
+### **Validating PAGA Topology** 🔍
+
+**Right panel (abstract graph) should show:**
+
+**Expected hematopoietic structure:**
+
+- ✅ **Central progenitor hub**: 0/7/9_progen highly connected
+- ✅ **Major branches**:
+  - Erythro-megakaryocyte lineage
+  - Myeloid lineage (mono + gran)
+  - Lymphoid lineage (T + B)
+- ✅ **Terminal leaves**: Differentiated types at graph periphery
+- ✅ **Thick edges for known relationships**: Eryth ↔ Mega, Mono ↔ Macro
+
+**Questionable edges (check against biology):**
+
+- Any remaining connections between unrelated lineages?
+- Do edge thicknesses match biological cell flux?
+
+---
+
+### **Left panel (cell layout) should show:**
+
+**Trajectory continuity:**
+
+- ✅ **Smooth gradients**: Progenitors transition gradually to mature cells
+- ✅ **No gaps**: Continuous cell distribution along paths
+- ✅ **Branching visible**: Can see where paths diverge
+- ✅ **Terminal types separated**: Different lineages in different spatial regions
+
+**Cell-level validation:**
+
+- Edges predominantly connect cells along known differentiation paths
+- Few edges between unrelated lineages
+- Dense connectivity within clusters
+
+---
+
+### **Assessing Edge Threshold** 🔍
+
+**`threshold=0.03`**: Only shows edges with confidence >0.03
+
+**Too strict (if we increased threshold):**
+
+- 🚩 Lose real connections
+- 🚩 Graph becomes fragmented
+- 🚩 Cannot trace all lineages
+
+**Too lenient (if we decreased threshold):**
+
+- 🚩 Spurious edges reappear
+- 🚩 Over-connected graph
+- 🚩 Biological signal obscured
+
+**Current threshold should:**
+
+- ✅ Show known developmental connections
+- ✅ Remove noise and spurious links
+- ✅ Create interpretable graph
+
+---
+
+### **Biological Interpretation** 💡
+
+**Use this plot to:**
+
+1. **Validate PAGA**: Does abstract graph match known biology?
+2. **Verify continuity**: Are trajectories continuous at cell level?
+3. **Identify branch points**: Where do lineages diverge?
+4. **Check edge quality**: Are connections biologically meaningful?
+
+**Expected observations:**
+
+- Progenitor region connected to all lineages
+- Clear bifurcation points (e.g., myeloid vs. lymphoid)
+- Terminal types well-separated
+- No cycles or shortcuts
+
+---
+
+### **In This Dataset**:
+
+**Examine both panels:**
+
+- **Right (PAGA graph)**: Does it match hematopoietic hierarchy?
+- **Left (cell layout)**: Can you trace smooth paths from Cd34+ cells to each mature type?
+- Do the two views tell the same biological story?
+- Are there any edges in the abstract graph that don't make biological sense?
+- Is this representation suitable for addressing your biological questions?
+:::
+
 ::: {.callout-important}
 ## Discuss
 
 Does this graph fit the biological expectations given what you know of
 hematopoiesis? Please have a look at the figure in Section 2 and
 compare to the paths you now have.
+
+**Questions to consider:**
+
+- Are all expected lineages represented (erythroid, myeloid, lymphoid)?
+- Do the branch points match known progenitor types (HSC → MPP → CMP/MEP/GMP)?
+- Are there any unexpected connections?
+- Does the graph topology support the biological model?
+- What would you change to improve the graph?
 :::
 
 ## Detecting gene changes along trajectories
@@ -506,6 +1390,7 @@ so we choose that cluster as starting timepoint for our pseudotime.
 **Pseudotime is a computational estimate of "developmental time" or "progression" along a biological process.**
 
 **What pseudotime represents:**
+
 - **NOT calendar time**: Cells were collected simultaneously
 - **NOT cell age**: How long a cell has existed
 - **Developmental progress**: How far along a differentiation path a cell has progressed
@@ -513,6 +1398,7 @@ so we choose that cluster as starting timepoint for our pseudotime.
 **Analogy**: Imagine photographing many people aged 0-100 years simultaneously. By arranging them by appearance (wrinkles, height, gray hair), you can order them by age—this is pseudotime.
 
 **Diffusion pseudotime specifically:**
+
 - Based on **random walk** distances through the cell-cell graph
 - Measures how "far" cells are from a root (origin) cell
 - Cells close to the root = early in development (low pseudotime)
@@ -520,12 +1406,14 @@ so we choose that cluster as starting timepoint for our pseudotime.
 - Respects the graph structure (developmental paths)
 
 **Choosing the root:**
+
 - Critical decision—sets the "starting point" of development
 - Should be the earliest/most progenitor-like population
 - **Cd34+ cells** are classical HSC markers → good root choice
 - Incorrect root → reversed or nonsensical pseudotime
 
 **What you can do with pseudotime:**
+
 - Order cells by developmental progression
 - Identify genes that change during differentiation
 - Find regulatory programs at specific stages
@@ -546,6 +1434,163 @@ Use the full raw data for visualization.
 sc.pl.draw_graph(adata, color=['annot', 'dpt_pseudotime'], legend_loc='on data', legend_fontsize= 'x-small')
 ```
 
+::: {.callout-tip}
+## What to Look For in Pseudotime Plots
+
+### **Understanding Pseudotime Visualization** 📊
+
+**Color gradient:**
+
+- **Purple/blue** (low values): Early developmental states (progenitors)
+- **Yellow/red** (high values): Late developmental states (differentiated cells)
+- **Gradient**: Continuous transition representing differentiation progression
+
+---
+
+### **Expected Pseudotime Patterns** ✅
+
+**Good pseudotime ordering:**
+
+- ✅ **0_progen has lowest values** (purple/blue): Correctly identifies starting point
+- ✅ **Mature cell types have highest values** (yellow/red): 12_eryth, 10_megakaryo, 14_TC, 15_BC at high pseudotime
+- ✅ **Smooth gradients along branches**: Continuous transition from progenitors to differentiated
+- ✅ **Different lineages reach different maximum values**: Not all paths are equally long
+
+**Biological interpretation:**
+
+**Low pseudotime (0.0-0.2):**
+
+- HSCs and early progenitors (Cd34+)
+- Multipotent cells
+- Starting point of all trajectories
+
+**Medium pseudotime (0.2-0.5):**
+
+- Committed progenitors (MEP, GMP, CLP)
+- Lineage restriction occurring
+- Still capable of some differentiation
+
+**High pseudotime (0.5-1.0):**
+
+- Differentiated cells
+- Terminal states
+- Lineage-specific functions active
+
+---
+
+### **Comparing Left and Right Panels** 🔍
+
+**Left panel (annot):**
+
+- Shows cell type labels
+- Discrete categories
+
+**Right panel (dpt_pseudotime):**
+
+- Shows continuous developmental progression
+- Gradient representation
+
+**They should agree:**
+
+- ✅ Progenitor annotations should overlap with low pseudotime (blue)
+- ✅ Differentiated annotations should overlap with high pseudotime (yellow/red)
+- ✅ Intermediate clusters should have intermediate pseudotime
+
+---
+
+### **Common Patterns** 💡
+
+**Branching in pseudotime:**
+
+- Different lineages may have **different pseudotime ranges**
+- Example:
+  - Erythrocytes: 0.0 → 0.8
+  - T cells: 0.0 → 0.6
+  - Monocytes: 0.0 → 0.5
+- **Why**: Different "distances" from progenitors, different differentiation speeds
+
+**Cannot directly compare pseudotime between lineages:**
+
+- Pseudotime = 0.5 in erythrocytes ≠ pseudotime = 0.5 in T cells
+- They're at different absolute stages
+- Only meaningful **within** a lineage
+
+---
+
+### **Problematic Patterns** 🚩
+
+**Reversed pseudotime:**
+
+- 🚩 Progenitors have high values, mature cells have low
+- **Cause**: Wrong root cell chosen
+- **Action**: Choose different root (ensure it's Cd34+)
+
+**No gradient:**
+
+- 🚩 All cells have similar pseudotime values
+- **Cause**: Poor graph connectivity or wrong root
+- **Action**: Recalculate neighbors, check root
+
+**Scattered values:**
+
+- 🚩 Adjacent cells have very different pseudotime (patchy, not smooth)
+- **Cause**: Fragmented graph or high noise
+- **Action**: Increase n_neighbors, check data quality
+
+**Unexpected high values:**
+
+- 🚩 Progenitor cluster has some yellow/red cells
+- **Cause**: Misannotated cells or doublets
+- **Action**: Check marker expression in high-pseudotime "progenitors"
+
+**One lineage dominates:**
+
+- 🚩 Only one branch reaches high pseudotime, others stuck at low
+- **Cause**: Graph connectivity favors one path
+- **Action**: Check neighbor graph, may need bidirectional edges
+
+---
+
+### **Biological Interpretation** 🔬
+
+**What pseudotime tells you:**
+
+- **Overall developmental state** of each cell
+- **Ordering** of cells from early to late
+- **Relative position** along differentiation
+
+**What pseudotime does NOT tell you:**
+
+- **Absolute time** (hours, days) of differentiation
+- **Rate** of differentiation (pseudotime is relative, not linear with time)
+- **Direction between lineages** (can't compare across branches)
+
+**Using pseudotime:**
+
+- Order cells for gene expression analysis
+- Identify early vs. late expressed genes
+- Find commitment points (where expression changes sharply)
+- Guide downstream lineage analysis
+
+---
+
+### **In This Dataset**:
+
+**Check pseudotime plot:**
+
+- Do 0_progen, 7_progen, 9_progen have lowest pseudotime (blue)?
+- Do 12_eryth, 10_megakaryo, 14_TC, 15_BC have highest pseudotime (yellow)?
+- Are there smooth gradients along branches?
+- Can you identify intermediate cells (green/yellow)?
+- Does the pseudotime ordering make biological sense for hematopoiesis?
+
+**Validation:**
+
+- Do Cd34+ cells have low pseudotime?
+- Do cells high for lineage markers (Alas2, Ms4a1, Cd3e) have high pseudotime?
+- Are there any surprising patterns?
+:::
+
 ::: {.callout-important}
 ## Discuss
 
@@ -554,10 +1599,13 @@ cluster. Have a look at the pseudotime plot. How well do you think it
 represents actual developmental time? What does it represent?
 
 **Consider:**
+
 - Are mature cell types at high pseudotime?
 - Are progenitors at low pseudotime?
 - Do cells along the same lineage have increasing pseudotime?
 - What about cells from different lineages—can their pseudotimes be directly compared?
+- Does pseudotime = 0.5 mean the same thing in different lineages?
+- Is this truly "time" or something else?
 :::
 
 ## Using CellRank to investigate gene expression changes along specific trajectories
@@ -575,6 +1623,7 @@ differentiated cell types).
 **CellRank addresses a key limitation of simple pseudotime: branching trajectories.**
 
 **The problem with global pseudotime:**
+
 - A single pseudotime value per cell
 - Works well for linear processes (A → B → C)
 - Fails for branching processes:
@@ -583,12 +1632,14 @@ differentiated cell types).
   - But they're developing toward **different fates**
 
 **CellRank's solution: Fate probabilities**
+
 - Each cell gets a probability of reaching each terminal state
 - Example: A progenitor might be 70% likely to become an erythrocyte, 20% megakaryocyte, 10% other
 - Committed cells: 95%+ probability for one fate
 - Multipotent cells: Distributed probabilities across fates
 
 **How CellRank works:**
+
 1. **Transition matrix**: Models cell-to-cell transition probabilities
    - Based on pseudotime, RNA velocity, or other metrics
    - "If a cell is in state A, what's the probability it moves to state B?"
@@ -606,6 +1657,7 @@ differentiated cell types).
    - Reveals lineage-specific regulatory programs
 
 **Why this matters:**
+
 - Identify **lineage commitment points** (where fates diverge)
 - Find **lineage-specific genes** (expressed only along one trajectory)
 - Compare **gene dynamics** between lineages
@@ -623,23 +1675,27 @@ transition matrix.
 **Creating a CellRank kernel from pseudotime:**
 
 **What is a kernel?**
+
 - Encodes **transition probabilities** between cells
 - Based on pseudotime: cells with similar pseudotime are neighbors
 - Direction: cells "move" forward in pseudotime (low → high)
 
 **Transition matrix:**
+
 - Rows and columns = cells
 - Entry (i, j) = probability of cell i transitioning to cell j
 - Row sums = 1 (each cell must go somewhere)
 - Sparse matrix (most cell-to-cell transitions have zero probability)
 
 **PseudotimeKernel logic:**
+
 - Cells can transition to neighbors with **higher** pseudotime
 - Transition probability decreases with pseudotime distance
 - Creates directed graph: progenitors → differentiated cells
 - Cannot "go backward" in development
 
 **Alternative kernels:**
+
 - **VelocityKernel**: Uses RNA velocity (transcriptional dynamics)
 - **CytoTRACEKernel**: Based on differentiation potential
 - **ConnectivityKernel**: Purely based on nearest neighbors
@@ -663,23 +1719,27 @@ PseudotimeKernel (`pt_kernel`) and compute macrostates in our dataset
 **GPCCA (Generalized Perron Cluster Cluster Analysis) identifies macrostates:**
 
 **What are macrostates?**
+
 - Groups of cells with **similar fate probabilities**
 - Represent stable states in the developmental landscape
 - Include both progenitors and terminal states
 - Based on transition dynamics, not just gene expression
 
 **How GPCCA works:**
+
 1. **Coarse-graining**: Simplifies the transition matrix
 2. **Spectral decomposition**: Finds dominant transition patterns
 3. **Clustering**: Groups cells by transition similarity
 4. **Macrostate assignment**: Labels cells by their coarse-grained state
 
 **Parameters:**
+
 - `cluster_key='annot'`: Uses our cell type annotations to guide the analysis
 - `n_states=[10,15]`: Tries different numbers of macrostates, selects optimal
 - `n_cells=50`: Minimum cells per macrostate (prevents tiny, unstable states)
 
 **Why this matters:**
+
 - Macrostates often correspond to biological cell types or stages
 - Some macrostates = terminal states (fully differentiated)
 - Others = transient states (progenitors, intermediate stages)
@@ -716,7 +1776,7 @@ see how well they correspond to what we would expect.
 # Create figure with 1 row, 2 columns
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
 
-# First plot: macrostates (left subplot)
+# First plot: initial states (left subplot)
 scv.pl.scatter(
     adata,
     color='init_states_fwd',
@@ -725,8 +1785,8 @@ scv.pl.scatter(
     frameon=False,
     size=10,
     linewidth=0,
-    ax=ax1,  # Pass the axis
-    show=False  # Don't show yet
+    ax=ax1,
+    show=False
 )
 
 # Second plot: terminal states (right subplot)  
@@ -738,8 +1798,8 @@ scv.pl.scatter(
     frameon=False,
     size=10,
     linewidth=0,
-    ax=ax2,  # Pass the axis
-    show=False  # Don't show yet
+    ax=ax2,
+    show=False
 )
 
 # Add titles
@@ -749,6 +1809,157 @@ ax2.set_title('Terminal States (Forward)')
 plt.tight_layout()
 plt.show()
 ```
+
+::: {.callout-tip}
+## What to Look For in Initial and Terminal States
+
+### **Initial States (Left Panel)** 🔵
+
+**Expected pattern:**
+
+- ✅ **High probability (red/orange) in 0_progen region**: Correctly identified starting point
+- ✅ **Low/zero probability elsewhere**: Other cell types not initial states
+- ✅ **Central location on graph**: Progenitors at hub of developmental tree
+
+**Quality checks:**
+
+- ✅ Does high probability overlap with Cd34+ cells?
+- ✅ Is the initial state in a central position (paths radiate from here)?
+- ✅ Are other progenitor clusters (7, 9) also partially initial (if they're early stages)?
+
+**Problematic patterns:**
+
+- 🚩 **Initial state at graph periphery**: Wrong root chosen
+- 🚩 **Multiple disconnected initial regions**: Fragmented graph
+- 🚩 **Differentiated cells as initial**: Cd34- cells with high initial probability
+
+---
+
+### **Terminal States (Right Panel)** 🔴
+
+**Expected pattern:**
+
+- ✅ **Multiple colored regions**: Each represents a different terminal fate
+- ✅ **High probability at graph periphery**: Fully differentiated cells
+- ✅ **Matches known lineages**: Colors align with cell type annotations
+- ✅ **Low probability in progenitors**: Undecided cells, distributed probabilities
+
+**Expected terminal states for hematopoiesis:**
+
+- **12_eryth**: Erythrocyte fate (one color)
+- **10_megakaryo**: Megakaryocyte fate (another color)
+- **5_mono or 16_macro**: Monocyte/macrophage fate
+- **2_gran**: Granulocyte fate
+- **14_TC**: T cell fate
+- **15_BC**: B cell fate
+- **Possibly others**: Dendritic cells, mast cells
+
+**Should see ~5-10 distinct terminal fates** (different colors)
+
+---
+
+### **Quality Assessment** 🔍
+
+**Good terminal state prediction:**
+
+- ✅ **Matches biology**: Predicted terminals are actually differentiated types
+- ✅ **Peripheral location**: Terminal states at graph edges
+- ✅ **Mutually exclusive**: Each region predominantly one color (one fate)
+- ✅ **Complete coverage**: All major lineages have a terminal state
+
+**Problematic predictions:**
+
+- 🚩 **Progenitors as terminal**: Cd34+ cells assigned a terminal fate
+- 🚩 **Too few terminals** (<5): Missing major lineages
+- 🚩 **Too many terminals** (>15): Over-splitting or picking up noise
+- 🚩 **Intermediate cells as terminal**: Non-differentiated states marked as endpoints
+- 🚩 **Mixed regions**: One cluster has multiple strong terminal probabilities
+
+---
+
+### **Transition Zones** 🟡
+
+**Cells with intermediate colors:**
+
+- Multiple fate probabilities (e.g., 40% eryth, 40% mega, 20% other)
+- **Bi-potent or multi-potent progenitors**
+- **Commitment point**: Where fate decisions occur
+- Biologically important: where lineages diverge
+
+**Expected transition zones:**
+
+- Between 0_progen and differentiated types
+- At branch points (e.g., where eryth and mega diverge)
+- Not in fully differentiated regions
+
+---
+
+### **Biological Interpretation** 💡
+
+**High terminal probability (>0.8):**
+
+- Cell is **committed** to that fate
+- Already differentiated or very close
+- Expresses lineage-specific genes
+
+**Medium probability (0.3-0.7):**
+
+- Cell is **in transition**
+- Still has plasticity
+- May be at commitment point
+
+**Low/distributed probabilities:**
+
+- **Multipotent cell**
+- Multiple possible fates
+- Early in differentiation
+
+---
+
+### **Validation Steps** ✅
+
+**Check if terminal states make sense:**
+
+1. **Plot markers on terminal states**:
+```python
+scv.pl.scatter(adata, color=['term_states_fwd', 'Alas2', 'Pf4', 'Ms4a1'], 
+               basis='X_draw_graph_fa')
+```
+
+2. **Verify high Alas2 in erythrocyte terminal state**
+3. **Verify high Pf4 in megakaryocyte terminal state**
+4. **Etc. for each lineage**
+
+**If terminal states don't match markers:**
+
+- 🚩 Model may have misidentified endpoints
+- **Action**: Manually set terminal states or adjust parameters
+
+---
+
+### **In This Dataset**:
+
+**Examine both panels:**
+
+**Initial states:**
+
+- Is 0_progen clearly the initial state?
+- Are other progenitor clusters (7, 9) also included?
+- Does the initial region make biological sense?
+
+**Terminal states:**
+
+- How many distinct terminal fates are predicted?
+- Can you identify which fate corresponds to which lineage (eryth, mega, mono, etc.)?
+- Do the terminal states align with your annotated differentiated cell types?
+- Are there any unexpected terminal states?
+- Are any known differentiated types missing from terminal states?
+
+**Biological validation:**
+
+- Do initial and terminal states match the hematopoiesis hierarchy?
+- Are fate probabilities distributed sensibly across the graph?
+:::
 
 ::: {.callout-important}
 ## Discuss
@@ -760,6 +1971,14 @@ The results are influenced by a multitude of parameters, such as the
 PAGA graph connections (mediated by the `n_neighbors` parameter in
 `sc.pp.neighbors`) and the `n_states` parameter in `pt_est.fit`. Feel
 free to play with these parameters and see how the results change.
+
+**Questions to explore:**
+
+- What happens with n_neighbors = 5 vs. 15?
+- What happens with n_states = 8 vs. 12?
+- Does increasing n_cells threshold (to 100) change terminal states?
+- How sensitive are results to parameter choices?
+- Which parameter set best captures known biology?
 :::
 
 Now that we have calculated our initial and terminal states, we will
@@ -775,27 +1994,32 @@ a certain fully differentiated cell type.
 **Fate probability calculation uses Markov chain absorption probabilities:**
 
 **The mathematics:**
+
 - Given: Transition matrix T (cell → cell probabilities)
 - Given: Terminal states (absorbing states in the Markov chain)
 - Calculate: For each cell, probability of eventually reaching each terminal state
 
 **Intuition:**
+
 - Start a random walk from a progenitor cell
 - Follow transition probabilities: cell A → cell B → cell C...
 - Eventually reach a terminal state (erythrocyte, megakaryocyte, etc.)
 - Repeat many times → estimate probability of each outcome
 
 **Parameters:**
+
 - `use_petsc=False`: Don't use specialized sparse matrix solver (simpler, but slower)
 - `solver="direct"`: Use direct matrix inversion (accurate for small-medium datasets)
 
 **Output stored in `adata.obsm['lineages']`:**
+
 - One column per terminal state
 - Each cell gets a probability for each fate
 - Probabilities sum to 1 across fates
 - Example: [Erythrocyte: 0.8, Megakaryocyte: 0.15, Other: 0.05]
 
 **Biological interpretation:**
+
 - **Committed cells**: One fate probability ≈ 1
 - **Bipotent progenitors**: Split between two fates
 - **Multipotent cells**: Distributed across many fates
@@ -807,6 +2031,181 @@ a certain fully differentiated cell type.
 pt_est.compute_fate_probabilities(use_petsc=False, solver="direct")
 pt_est.plot_fate_probabilities(legend_loc='right', basis='X_draw_graph_fa')
 ```
+
+::: {.callout-tip}
+## What to Look For in Fate Probability Plots
+
+### **Understanding Fate Probability Visualization** 📊
+
+**Multiple panels:**
+
+- One panel per **terminal fate** (lineage)
+- Each shows **probability** of reaching that fate
+- Color intensity = probability (0-1 scale)
+
+**Color gradient:**
+
+- **Dark purple/blue** (0.0): No chance of this fate
+- **Intermediate colors** (0.3-0.7): Mixed fate probabilities
+- **Bright yellow/red** (1.0): Committed to this fate
+
+---
+
+### **Expected Patterns for Each Lineage** ✅
+
+**Erythrocyte fate (12_eryth panel):**
+
+- ✅ **High probability** (yellow/red) in 12_eryth region and path leading to it
+- ✅ **Medium probability** in MEP progenitors (shared with megakaryocytes)
+- ✅ **Low probability** in lymphoid and myeloid branches
+- ✅ **Gradient**: Smooth transition from progenitors (mixed) to committed (high)
+
+**Megakaryocyte fate (10_megakaryo panel):**
+
+- ✅ **High probability** in 10_megakaryo region
+- ✅ **Medium probability** in MEP progenitors (overlaps with eryth fate)
+- ✅ **Low probability** elsewhere
+- ✅ **Branching from erythrocyte**: Can see where fates diverge
+
+**Other lineages (monocyte, T cell, B cell, etc.):**
+
+- Each should show **high probability in its respective region**
+- **Exclusive** or **nearly exclusive** (minimal cross-fate probabilities in mature cells)
+- **Shared progenitor probabilities** (early cells have probabilities for multiple fates)
+
+---
+
+### **Key Biological Features** 🔍
+
+**Multipotent progenitors (0_progen):**
+
+- ✅ **Rainbow appearance**: Low-medium probability for **multiple** fates
+- ✅ Shows these cells are **uncommitted**
+- ✅ Biological plasticity preserved
+
+**Commitment gradients:**
+
+- ✅ **Smooth transition** from mixed (purple) to committed (yellow)
+- ✅ Identifies **when** cells make fate decisions
+- ✅ Intermediate probabilities show **bipotent** stages
+
+**Bipotent progenitors (example: MEP):**
+
+- ✅ Cells along eryth-mega branch show **both** eryth and mega probabilities
+- ✅ As you move toward terminals, one increases, other decreases
+- ✅ Reveals **progressive commitment**
+
+**Terminal cells:**
+
+- ✅ **Saturated color** (bright yellow/red) for their own fate
+- ✅ **Near-zero** for all other fates
+- ✅ **Fully committed**, no plasticity
+
+---
+
+### **Problematic Patterns** 🚩
+
+**All cells one fate:**
+
+- 🚩 Every cell has 100% probability for same fate
+- Model collapsed, not useful
+- **Action**: Check parameters, terminal state selection
+
+**No clear gradients:**
+
+- 🚩 Abrupt transitions (all 0 or all 1, no intermediate)
+- Suggests discrete types, not continuous differentiation
+- May need different modeling approach
+
+**Progenitors highly committed:**
+
+- 🚩 Cd34+ cells already have >90% probability for one fate
+- They should be multipotent (distributed probabilities)
+- **Action**: Check root cell, transition matrix
+
+**Impossible fate patterns:**
+
+- 🚩 Erythrocytes show high probability for T cell fate
+- Committed cells shouldn't have probabilities for other lineages
+- **Action**: Check graph connectivity, remove spurious edges
+
+**Missing lineages:**
+
+- 🚩 No fate probability panel for a known cell type
+- Model didn't identify it as terminal state
+- **Action**: Manually set terminal states
+
+---
+
+### **Cross-Lineage Comparisons** 🔬
+
+**Competing fates:**
+
+Look at cells with probabilities for **multiple** fates:
+
+- **MEP region**: High eryth + high mega probabilities
+  - ✅ Bipotent progenitor (can become either)
+- **CMP region**: Moderate for multiple myeloid fates
+  - ✅ Multipotent myeloid progenitor
+- **Mature cells**: Should have only ONE high probability
+  - 🚩 If mature cell has multiple high: possible doublet
+
+**Exclusive fates:**
+
+- Lymphoid fates (T, B) should be **exclusive** from myeloid/erythroid
+- Once committed to lymphoid, zero probability for myeloid
+- If not: suggests graph has spurious connections
+
+---
+
+### **Biological Insights** 💡
+
+**From fate probabilities, learn:**
+
+1. **Commitment order**: Which fates get decided first?
+2. **Bifurcation points**: Where in pseudotime do fates diverge?
+3. **Lineage relationships**: Which fates share progenitors (high co-probability)?
+4. **Plasticity windows**: When are cells multipotent vs. committed?
+
+**Example interpretation:**
+
+- "MEP progenitors (intermediate pseudotime) show 50% erythrocyte, 40% megakaryocyte fate"
+  - → These are bipotent
+  - → Commitment occurs later in differentiation
+  - → Eryth-mega fate decision is late-stage
+
+---
+
+### **In This Dataset**:
+
+**Examine all fate probability panels:**
+
+- How many terminal fates were identified?
+- Do they correspond to your annotated cell types?
+- Do progenitors show distributed probabilities (multipotent)?
+- Do mature cells show single high probability (committed)?
+- Can you identify bipotent progenitor regions (e.g., MEP)?
+- Are fate probabilities mutually exclusive for unrelated lineages?
+- Do the gradients make biological sense?
+
+**Follow-up:**
+
+- For unexpected patterns, validate with marker genes
+- Check if probabilities match known hematopoietic relationships
+- Use these probabilities to identify lineage driver genes (next step)
+:::
+
+::: {.callout-important}
+## Discuss
+
+- Are the initial and terminal states predicted as you expected? 
+- What deviates from your expectation?
+
+The results are influenced by a multitude of parameters, such as the
+PAGA graph connections (mediated by the `n_neighbors` parameter in
+`sc.pp.neighbors`) and the `n_states` parameter in `pt_est.fit`. Feel
+free to play with these parameters and see how the results change.
+:::
 
 Now that we have computed the fate probabilities of every cell, we can
 compute **driver genes**—CellRank does this by correlating fate
@@ -824,6 +2223,7 @@ Below we will calculate driver genes for the erythrocyte lineage
 **Lineage driver genes are those that determine or execute cell fate decisions.**
 
 **The correlation logic:**
+
 - **High positive correlation with fate probability** → gene increases as cells commit to that fate
 - These genes may:
   - **Determine fate**: Transcription factors that activate lineage programs
@@ -831,15 +2231,18 @@ Below we will calculate driver genes for the erythrocyte lineage
   - **Mark fate**: Lineage-specific markers
 
 **Example: Erythrocyte drivers**
+
 - **Expected**: Hemoglobin genes (Hba, Hbb), erythroid transcription factors (Gata1, Klf1)
 - **Novel findings**: Previously unknown genes correlated with erythroid fate → potential regulators
 
 **Why this works:**
+
 - Cells committed to erythrocyte fate → high erythrocyte probability
 - These same cells express erythrocyte-specific genes
 - Correlation reveals genes co-varying with fate commitment
 
 **Important caveat:**
+
 - Correlation ≠ causation
 - A gene could be:
   - **Driver**: Causes the fate decision
@@ -848,6 +2251,7 @@ Below we will calculate driver genes for the erythrocyte lineage
 - Experimental validation needed to distinguish these
 
 **How CellRank computes this:**
+
 1. For each gene, get expression across all cells
 2. For each lineage, get fate probabilities across all cells
 3. Calculate Spearman or Pearson correlation
@@ -868,6 +2272,114 @@ drivers_mega_sort = drivers_mega.sort_values(by='10_megakaryo_corr', ascending=F
 drivers_ery_sort.head(n=10)
 ```
 
+::: {.callout-tip}
+## What to Look For in Driver Gene Tables
+
+### **Understanding the Output** 📊
+
+**Columns:**
+
+- **Gene name** (index): The driver gene
+- **12_eryth_corr**: Correlation coefficient with erythrocyte fate probability
+  - Range: -1 to +1
+  - Higher = stronger driver
+- **12_eryth_pval**: Statistical significance
+- **12_eryth_qval**: FDR-corrected p-value
+
+---
+
+### **Expected Top Drivers for Erythrocytes** ✅
+
+**Known erythroid genes should rank highly:**
+
+- ✅ **Hemoglobin genes**: Hba-a1, Hba-a2, Hbb-b1, Hbb-b2
+  - Correlation: >0.8
+  - Essential for oxygen transport
+- ✅ **Erythroid TFs**: Gata1, Klf1, Tal1
+  - Master regulators of erythroid program
+- ✅ **Erythroid enzymes**: Alas2, Epb4.2, Car2
+  - Lineage-specific metabolic functions
+
+**If these are in top 10:**
+
+- ✅ Model is working correctly
+- ✅ Fate probabilities align with biology
+- ✅ Can trust novel driver predictions
+
+---
+
+### **Novel Driver Genes** 💡
+
+**Genes you don't recognize in top 10:**
+
+- **May be**:
+  - Novel regulators of erythrocyte differentiation
+  - Co-regulated genes in erythroid program
+  - Candidates for experimental validation
+  
+- **Validation needed**:
+  - Check expression pattern (next plots)
+  - Literature search
+  - Confirm correlation is real
+
+---
+
+### **Correlation Values** 🔍
+
+**High correlation (>0.7):**
+
+- Strong driver candidate
+- Expression tightly coupled with fate
+- High confidence
+
+**Medium correlation (0.4-0.7):**
+
+- Moderate association
+- May be secondary regulators or downstream effectors
+- Worth investigating
+
+**Low correlation (<0.4):**
+
+- Weak association
+- May be noise or indirect relationships
+- Lower priority
+
+**Negative correlation:**
+
+- Gene **decreases** as fate probability increases
+- May represent:
+  - Genes turned off during differentiation
+  - Progenitor genes lost upon commitment
+  - Competing lineage markers
+
+---
+
+### **Statistical Significance** 🔍
+
+**P-value/Q-value:**
+
+- Should be very low (<0.001) for top drivers
+- With 1000s of cells, power is high
+- Focus on **effect size** (correlation) not just significance
+
+---
+
+### **In This Dataset**:
+
+**Check erythrocyte drivers:**
+
+- Are known erythroid genes (Hba, Hbb, Alas2) in top 10?
+- What are the correlation values?
+- Are there unexpected genes?
+- Do the genes make biological sense?
+
+**Compare to megakaryocyte drivers** (in next output):
+
+- Are they distinct from erythrocyte drivers?
+- Or do they share some (MEP genes)?
+- Do megakaryocyte-specific genes (Pf4, Vwf, Gp9) rank highly?
+:::
+
 Now we plot the top 10 previously calculated driver genes for the
 erythrocyte and megakaryocyte lineages.
 
@@ -880,6 +2392,150 @@ sc.pl.draw_graph(adata, color=drivers_ery_sort.index.tolist()[1:10], legend_loc=
 sc.pl.draw_graph(adata, color=drivers_mega_sort.index.tolist()[1:10], legend_loc='on data', legend_fontsize= 'x-small', use_raw=False, ncols=3)
 ```
 
+::: {.callout-tip}
+## What to Look For in Driver Gene Expression Plots
+
+### **Validating Driver Genes** ✅
+
+**Good lineage driver patterns:**
+
+**Erythrocyte drivers:**
+
+- ✅ **High expression (yellow/red) in 12_eryth region only**
+- ✅ **Low/absent in other lineages**
+- ✅ **Gradient along erythroid trajectory**: Increasing from progenitors to mature eryth
+- ✅ **Specificity**: Not expressed in megakaryocytes (sister lineage)
+
+**Megakaryocyte drivers:**
+
+- ✅ **High in 10_megakaryo region**
+- ✅ **Low elsewhere**
+- ✅ **Gradient along megakaryocyte trajectory**
+- ✅ **Distinct from erythrocyte drivers**
+
+---
+
+### **Expression Pattern Categories** 🔍
+
+**1. Terminal-specific genes:**
+
+- Only expressed in fully differentiated cells
+- Example: Hemoglobin (Hba, Hbb) only in mature erythrocytes
+- **Interpretation**: Effector genes executing lineage function
+
+**2. Gradient genes:**
+
+- Expression increases gradually from progenitors to terminal
+- Example: Erythroid enzymes progressively upregulated
+- **Interpretation**: Progressive lineage commitment
+
+**3. Early commitment genes:**
+
+- Turn on early in the trajectory (near progenitors)
+- Example: Lineage-specifying transcription factors
+- **Interpretation**: Fate determinants, initiate differentiation
+
+**4. Transiently expressed:**
+
+- Peak at intermediate stages, then decline
+- May represent transient regulatory programs
+- **Interpretation**: Genes controlling transition, not needed in mature cells
+
+---
+
+### **Comparing Erythrocyte and Megakaryocyte Drivers** 🔍
+
+**Should see:**
+
+**Distinct patterns:**
+
+- ✅ Each lineage has **unique drivers**
+- ✅ Minimal overlap in high-expressing regions
+- ✅ Validates they are separate fates
+
+**Shared progenitor expression:**
+
+- ✅ Both lineages may show **low expression** in same progenitor region
+- ✅ Reflects common MEP origin
+- ✅ Then diverge: one goes up in eryth, other in mega
+
+**Spatial separation:**
+
+- Erythrocyte drivers: Bright in one branch
+- Megakaryocyte drivers: Bright in different branch
+- If overlapping: suggests shared biology or misclassification
+
+---
+
+### **Red Flags** 🚩
+
+**Ubiquitous expression:**
+
+- 🚩 Driver gene expressed equally in all cell types
+- Not lineage-specific, shouldn't be top driver
+- **Possible causes**: Housekeeping gene, normalization issue
+
+**Wrong lineage:**
+
+- 🚩 "Erythrocyte driver" is brightest in T cells
+- Correlation may be spurious or model failed
+- **Action**: Check correlation calculation, verify with known markers
+
+**No expression:**
+
+- 🚩 Top driver shows zero/low expression everywhere
+- Model error or gene not detected
+- **Action**: Check if gene is in dataset, verify calculation
+
+**Ribosomal/mitochondrial genes:**
+
+- 🚩 RPL/RPS/MT genes as top drivers
+- Technical artifacts, not biological drivers
+- **Note**: We filtered these later in the analysis
+
+---
+
+### **Biological Validation** ✅
+
+**For each driver, ask:**
+
+1. **Is expression specific to the lineage?**
+2. **Does it gradient along the trajectory?**
+3. **Is it a known lineage gene (validates model)?**
+4. **If novel, does the pattern make sense?**
+
+**Known markers to check:**
+
+**Erythrocytes**: Alas2, Hba-a1, Hbb-b1, Gata1, Klf1
+**Megakaryocytes**: Pf4, Vwf, Gp9, Gp1bb, Itga2b
+
+**If these are top drivers** → ✅ Model is working
+**If these are missing** → 🚩 Model may be problematic
+
+---
+
+### **In This Dataset**:
+
+**Examine erythrocyte driver plots:**
+
+- Are hemoglobin genes highly specific to 12_eryth?
+- Is there a gradient from progenitors to mature erythrocytes?
+- Are drivers absent from other lineages?
+- Do expression patterns validate the correlation scores?
+
+**Examine megakaryocyte driver plots:**
+
+- Are they distinct from erythrocyte drivers?
+- Do they show megakaryocyte specificity?
+- Is there appropriate gradient?
+
+**Compare lineages:**
+
+- Can you clearly distinguish eryth vs. mega based on these drivers?
+- Are there any genes expressed in both (shared MEP genes)?
+- Do the patterns support the PAGA graph structure?
+:::
+
 ::: {.callout-important}
 ## Discuss
 
@@ -887,181 +2543,17 @@ Discuss amongst yourselves which genes appear to be good markers for
 the respective lineages and why!
 
 **Questions to consider:**
+
 - Do the top drivers make biological sense?
 - Are known lineage markers (e.g., hemoglobin genes for erythrocytes) present?
 - Do you see any unexpected genes? Could they be novel regulators?
 - How specific are the drivers (expressed only in target lineage)?
 - Do drivers appear early (fate determinants) or late (effector genes)?
+- Could you use these drivers to:
+  - Validate the trajectory?
+  - Design experiments to test fate determination?
+  - Build a gene regulatory network?
 :::
-
-Now we want to look at the expression trends for some of the genes we
-just identified as potential drivers over pseudotime. CellRank uses
-**Generalized Additive Models (GAMs)** to fit smooth expression curves, so
-we start by creating such models for our data.
-
-::: {.callout-note}
-## Why run this code?
-
-**GAMs (Generalized Additive Models) fit smooth, non-linear curves to gene expression over pseudotime:**
-
-**Why GAMs?**
-- Gene expression during differentiation is **non-linear**
-- Not a straight line: genes can increase, decrease, peak, or show complex patterns
-- GAMs use **splines** (piecewise polynomial functions) to fit flexible curves
-- Captures biological dynamics better than linear regression
-
-**Parameter:**
-- `n_knots=6`: Number of "joints" in the spline
-  - More knots = more flexible curve (can capture rapid changes)
-  - Fewer knots = smoother curve (reduces overfitting)
-  - 6 is reasonable for most differentiation trajectories
-
-**What GAM fitting does:**
-1. For each gene, along each lineage:
-   - Order cells by pseudotime
-   - Fit a smooth curve through expression values
-   - Estimate confidence intervals
-
-2. Allows us to:
-   - Visualize gene dynamics over developmental time
-   - Identify when genes turn on/off
-   - Find transient expression (genes that peak mid-differentiation)
-   - Compare dynamics between lineages
-
-**Output:**
-- Smooth expression trends for each gene
-- Confidence bands (uncertainty in the fit)
-- Can identify significant temporal patterns
-:::
-
-```{python}
-#Fit GAMs
-model = cr.models.GAM(adata, n_knots=6)
-```
-
-Next, we plot some of the interesting genes of the erythrocyte (Car1,
-Atpif1, Vamp5) and megakaryocyte (Cavin2, Pbx1, Rab27b) lineages. We
-only plot the genes for their respective lineage, in order to compare
-their expression at different pseudotime points during the lineage's
-developmental trajectory.
-
-```{python}
-cr.pl.gene_trends(adata, 
-                  model = model,
-                  genes = ['Car1', 'Atpif1', 'Vamp5'],
-                  same_plot=True,
-                  time_key = 'dpt_pseudotime',
-                  lineages = ['12_eryth'],
-                  hide_cells=True,
-                  ncols=3,
-                  n_jobs=1,
-                  backend='threading')
-
-cr.pl.gene_trends(adata, 
-                  model = model,
-                  genes = ['Cavin2', 'Pbx1', 'Rab27b'],
-                  same_plot=True,
-                  time_key = 'dpt_pseudotime',
-                  lineages = ['10_megakaryo'],
-                  hide_cells=True,
-                  ncols=3,
-                  n_jobs=1,
-                  backend='threading')
-```
-
-What would this look like if we were to try and compare the gene
-expression between the two lineages?
-
-```{python}
-#Plot gene trends for erythrocyte and megakaryo lineages
-cr.pl.gene_trends(adata, 
-                  model = model,
-                  genes = ['Cavin2', 'Pbx1', 'Car1'],
-                  same_plot=True,
-                  time_key = 'dpt_pseudotime',
-                  lineages = ['10_megakaryo', '12_eryth'],
-                  hide_cells=True,
-                  ncols=3,
-                  n_jobs=1,
-                  backend='threading')
-```
-
-::: {.callout-important}
-## Discuss
-
-- Why do the different lineages in the plots above have different maximum pseudotime values? 
-- In how far do you think the gene expression values are comparable across the two lineages?
-
-**Hints:**
-- Pseudotime is relative to the chosen root
-- Different lineages may branch at different points
-- Does pseudotime = 0.5 in erythrocytes mean the same biological stage as pseudotime = 0.5 in megakaryocytes?
-- Think about **lineage-specific pseudotime** vs. **global pseudotime**
-:::
-
-We can also visualize the expression of several genes over pseudotime in
-a single trajectory. Let's do this for the 30 top driver genes of the
-erythrocyte and megakaryocyte lineages. If you have any genes that you
-are interested in, plot these using the code below.
-
-::: {.callout-tip}
-## Biological Relevance
-
-**Heatmaps reveal coordinated gene expression programs during differentiation:**
-
-**What to look for:**
-
-**1. Sequential activation:**
-- Early genes (left side): Expressed in progenitors
-- Late genes (right side): Expressed in mature cells
-- Reveals temporal order of differentiation events
-
-**2. Gene modules:**
-- Co-expressed genes cluster together (rows)
-- May represent functional modules (e.g., ribosome biogenesis, hemoglobin production)
-- Suggest coordinated regulatory programs
-
-**3. Expression waves:**
-- Transient expression: Genes that peak and decline
-- Sustained expression: Genes that stay on once activated
-- Repression: Genes turned off during differentiation
-
-**4. Fate probability correlation:**
-- Genes that track with fate probability are strong drivers
-- Sharp vs. gradual transitions reveal commitment dynamics
-
-**Biological interpretation:**
-- **Pioneer factors**: Genes expressed very early may initiate differentiation
-- **Effector genes**: Genes expressed late execute the differentiated phenotype
-- **Checkpoints**: Sharp transitions may indicate irreversible commitment points
-:::
-
-```{python}
-#Plot expression cascades of several genes over pseudotime
-cr.pl.heatmap(
-    adata,
-    model=model,
-    lineages='12_eryth',
-    cluster_key='annot',
-    show_fate_probabilities=True,
-    genes=drivers_ery_sort.index.tolist()[1:30],
-    time_key='dpt_pseudotime',
-    figsize=(12,10),
-    show_all_genes=True
-)
-
-cr.pl.heatmap(
-    adata,
-    model=model,
-    lineages='10_megakaryo',
-    cluster_key='annot',
-    show_fate_probabilities=True,
-    genes=drivers_mega_sort.index.tolist()[1:30],
-    time_key='dpt_pseudotime',
-    figsize=(12,10),
-    show_all_genes=True
-)
-```
 
 Now that we have visualized expression trends for several genes
 associated with our lineages, we could be interested in identifying
@@ -1082,24 +2574,28 @@ resolution parameter until you find the clustering to be appropriate.
 **Clustering gene trends identifies shared expression patterns:**
 
 **The approach:**
+
 1. **Fit GAM for each gene** along the lineage
 2. **Extract expression curves** (not raw values, but fitted trends)
 3. **Cluster curves** using Leiden clustering
 4. **Group genes** by similar temporal dynamics
 
 **Why this is useful:**
+
 - **Discovery**: Find genes you didn't initially identify as drivers
 - **Functional modules**: Co-expressed genes often share functions
 - **Regulatory networks**: Similar patterns suggest common regulation
 - **Hypothesis generation**: Novel genes in interesting clusters → candidates for validation
 
 **Parameters:**
+
 - `resolution=0.4`: Controls number of gene clusters
   - Higher → more clusters, finer patterns
   - Lower → fewer clusters, broader patterns
 - `random_state=0`: Reproducibility
 
 **Output:**
+
 - Genes grouped by expression dynamics
 - Examples:
   - **Early transient**: Peak early, then decline
@@ -1125,6 +2621,135 @@ cr.pl.cluster_trends(
     recompute=True
 )
 ```
+
+::: {.callout-tip}
+## What to Look For in Clustered Gene Trends
+
+### **Understanding the Heatmap** 📊
+
+**Layout:**
+
+- **Rows**: Genes (driver genes for erythrocyte lineage)
+- **Columns**: Cells ordered by pseudotime (left = early, right = late)
+- **Color**: Gene expression level (yellow = high, purple = low)
+- **Row clusters**: Genes grouped by similar expression patterns
+
+**Top panel: Fate probability**
+
+- Shows erythrocyte fate probability across pseudotime
+- Should increase from left (progenitors, low probability) to right (committed, high probability)
+
+---
+
+### **Gene Expression Patterns** 🔍
+
+**Cluster categories (look for these patterns):**
+
+**1. Sustained upregulation:**
+
+- Genes turn on early, stay on
+- Smooth transition from blue → yellow (left to right)
+- Example: Transcription factors initiating lineage commitment
+- **Biology**: Early fate determinants
+
+**2. Late activation:**
+
+- Genes stay low (blue) until late pseudotime
+- Sharp transition to yellow near right side
+- Example: Terminal differentiation genes (hemoglobin)
+- **Biology**: Effector genes for mature cell function
+
+**3. Early transient:**
+
+- Genes high early (yellow on left), decline later (blue on right)
+- Example: Genes involved in commitment but not maintenance
+- **Biology**: Transient regulatory programs
+
+**4. Mid-trajectory peak:**
+
+- Genes low early, peak in middle, decline late
+- Bell-curve expression pattern
+- Example: Genes controlling specific differentiation steps
+- **Biology**: Stage-specific regulators
+
+**5. Biphasic:**
+
+- Multiple peaks and troughs
+- Complex regulation
+- Example: Genes with feedback loops
+- **Biology**: Oscillating or cyclically expressed genes
+
+---
+
+### **Row Clustering** 🔍
+
+**Why genes cluster together:**
+
+- ✅ **Co-regulated**: Controlled by same transcription factors
+- ✅ **Functional modules**: Work together in same biological process
+- ✅ **Same temporal logic**: Turn on/off at same developmental stage
+
+**Use clustering to:**
+
+- Identify **gene modules** (groups working together)
+- Find **co-regulated genes** (hint at regulatory networks)
+- Discover **novel genes** in known regulatory programs
+
+---
+
+### **Quality Checks** ✅
+
+**Good gene trend clustering:**
+
+- ✅ **Distinct patterns**: Different clusters show different temporal dynamics
+- ✅ **Smooth gradients**: Within clusters, genes have similar smooth trends
+- ✅ **Biological coherence**: Clustered genes functionally related
+- ✅ **Known biology recapitulated**: Hemoglobin genes cluster together
+
+**Problematic patterns:**
+
+- 🚩 **All genes same pattern**: No diversity, poor resolution
+- 🚩 **No clear clusters**: Random/noisy expression, no structure
+- 🚩 **Vertical stripes**: Cells not ordered correctly by pseudotime
+- 🚩 **Known co-expressed genes in different clusters**: Clustering failed
+
+---
+
+### **Biological Interpretation** 💡
+
+**Early genes (blue → yellow on left):**
+
+- **Fate determinants**: Initiate erythroid program
+- **Commitment genes**: Lock in cell fate choice
+- Targets for interventions to direct differentiation
+
+**Late genes (blue → yellow on right):**
+
+- **Terminal differentiation**: Execute mature cell function
+- **Markers**: Identify fully differentiated cells
+- Often the most abundant proteins in mature cells
+
+**Middle genes (peak mid-trajectory):**
+
+- **Transition regulators**: Control specific steps
+- **May be transient**: No longer needed once cell is mature
+- Example: Cell cycle regulators, metabolic switches
+
+---
+
+### **In This Dataset**:
+
+**Examine the clustered trends heatmap:**
+
+- How many gene clusters are there?
+- Can you identify the different expression patterns?
+  - Sustained upregulation?
+  - Late activation?
+  - Early transient?
+- Do hemoglobin genes cluster together (expected)?
+- Are there interesting novel genes in specific pattern clusters?
+- Does the fate probability track align with gene expression (high fate = high expression of late genes)?
+:::
 
 The results of the clustering trend are saved as an AnnData object in
 `adata.uns['lineage_12_eryth_trend']`. We will now use this to extract
@@ -1182,6 +2807,161 @@ cr.pl.gene_trends(
     )
 ```
 
+::: {.callout-tip}
+## What to Look For in Gene Trend Plots
+
+### **Understanding GAM Plots** 📈
+
+**Components:**
+
+- **X-axis**: Pseudotime (developmental progression)
+- **Y-axis**: Gene expression level
+- **Solid line**: Fitted GAM curve (smoothed trend)
+- **Shaded region**: Confidence interval (uncertainty in fit)
+- **Color gradient**: Often shows cell density or fate probability
+
+---
+
+### **Expression Pattern Categories** ✅
+
+**High genes (late activation):**
+
+- ✅ **Low expression early** (left side near zero)
+- ✅ **Sharp increase late** (right side shoots up)
+- ✅ **Sustained at high level** in terminal cells
+- **Example**: Terminal differentiation genes (hemoglobin)
+- **Biology**: Turned on once fate is committed, define mature cell function
+
+**Mid genes (progressive activation):**
+
+- ✅ **Gradual increase** throughout trajectory
+- ✅ **Moderate levels early**, **high levels late**
+- ✅ **Smooth curve** without sharp transitions
+- **Example**: Progressive commitment genes
+- **Biology**: Gradual acquisition of lineage identity
+
+**Low genes (early transient or repressed):**
+
+- ✅ **High early**, **decline during differentiation**
+- ✅ **Low/zero in mature cells**
+- **Example**: Progenitor genes turned off upon commitment
+- **Biology**: Pluripotency or progenitor-maintenance genes
+
+---
+
+### **Curve Quality** 🔍
+
+**Good GAM fit:**
+
+- ✅ **Smooth curve**: Not excessively wiggly
+- ✅ **Follows data**: Curve through the cell cloud
+- ✅ **Narrow confidence bands**: High confidence in fit
+- ✅ **Biologically interpretable**: Curve shape makes sense
+
+**Poor GAM fit:**
+
+- 🚩 **Very wide confidence bands**: High uncertainty
+- 🚩 **Overly complex curve**: Too many peaks (overfitting)
+- 🚩 **Doesn't match cells**: Curve far from actual data points
+- 🚩 **Flat line**: No expression change (not a driver)
+
+---
+
+### **Biological Interpretation** 💡
+
+**Sharp transitions:**
+
+- Indicate **commitment points** or **regulatory switches**
+- Example: Transcription factor turns on, activates downstream program
+- Biologically important moments in differentiation
+
+**Smooth gradients:**
+
+- Indicate **progressive** processes
+- Example: Gradual accumulation of lineage-specific proteins
+- Continuous maturation
+
+**Declining genes:**
+
+- Loss of progenitor identity
+- Silencing of alternative fate programs
+- Maturation involves both gain and loss of gene expression
+
+---
+
+### **Pattern-Function Relationships** 🔬
+
+**Early genes (turn on first):**
+
+- Likely **transcription factors** or **signaling molecules**
+- Initiate differentiation cascade
+- **Master regulators** of fate
+
+**Middle genes (gradual increase):**
+
+- **Metabolic changes**: Adjusting cellular machinery
+- **Structural proteins**: Building lineage-specific features
+- **Progressive maturation**
+
+**Late genes (turn on last):**
+
+- **Effector genes**: Terminal cell functions
+- **Abundant proteins**: Hemoglobin in RBCs, antibodies in plasma cells
+- **Markers**: Identify fully mature cells
+
+---
+
+### **Comparing Across Genes** 🔍
+
+**Genes from same cluster should:**
+
+- ✅ Have very similar curve shapes
+- ✅ Peak at similar pseudotime
+- ✅ Have similar overall dynamics
+
+**If genes in same cluster look different:**
+
+- May need different cluster resolution
+- Or gene assignment was incorrect
+- Check individual gene fits
+
+---
+
+### **In This Dataset**:
+
+**Examine the 9 gene trends:**
+
+**High genes (clusters 1):**
+
+- Do they show late activation pattern?
+- Sharp increase near terminal pseudotime?
+- Are these likely terminal differentiation genes?
+
+**Mid genes (cluster 6):**
+
+- Gradual increase throughout?
+- Moderate expression even early?
+- Progressive commitment genes?
+
+**Low genes (cluster 4):**
+
+- High early, declining?
+- Progenitor genes being shut off?
+- Or just low correlation genes?
+
+**Biological sense:**
+
+- Do the patterns match your expectations?
+- Can you hypothesize functions based on timing?
+- Would you prioritize any for experimental validation?
+
+**GAM fit quality:**
+
+- Are curves smooth and biological?
+- Are confidence bands reasonably narrow?
+- Do curves follow the general expression trend?
+:::
+
 You can visualize any number of genes in this manner in order to see
 which ones are interesting for your specific question.
 
@@ -1197,10 +2977,29 @@ can you create a PAGA trajectory using the original UMAP from Seurat
 instead? **Hint**: You first need to compute the neighbors on the UMAP.
 
 **Questions to consider:**
+
 - How sensitive are results to parameter choices?
 - Do biological conclusions change with different settings?
 - What's the balance between data-driven discovery and biological assumptions?
 - How do you validate that a trajectory is "correct"?
+- When should you trust the algorithm vs. impose biological knowledge?
+- What experiments could validate your computational trajectories?
+
+**Parameters to experiment with:**
+
+- `n_neighbors`: 5, 8, 15, 20
+- `n_states`: 8, 10, 15
+- `resolution` in gene clustering: 0.2, 0.4, 0.8
+- Different root cells
+- Different terminal states (manual vs. automatic)
+
+**Validation approaches:**
+
+- Known marker expression
+- Literature comparisons
+- Cross-method consistency
+- Biological plausibility
+- Experimental validation (differentiation assays, perturbations)
 :::
 
 ## Session info
