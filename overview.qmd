@@ -1,0 +1,958 @@
+---
+title: "scRNA-seq Analysis Overview"
+description: "Complete workflow overview with key decisions and biological questions addressed at each step"
+---
+
+## Analysis Workflow
+
+```{mermaid}
+flowchart TD
+    A[Raw 10x Data<br/>H5 files] --> B[Quality Control]
+    B --> C{Pass QC?}
+    C -->|Yes| D[Dimensionality Reduction<br/>PCA, UMAP, tSNE]
+    C -->|No| B1[Filter cells/genes<br/>Adjust thresholds]
+    B1 --> B
+    
+    D --> E{Batch Effects?}
+    E -->|Yes| F[Data Integration<br/>BBKNN, Harmony, Combat, Scanorama]
+    E -->|No| G[Clustering]
+    F --> G
+    
+    G --> H{Good Clusters?}
+    H -->|No| G1[Adjust resolution<br/>Check markers]
+    G1 --> G
+    H -->|Yes| I[Cell Type Annotation]
+    
+    I --> J{Annotate how?}
+    J -->|Reference-based| K[Celltypist, Label Transfer, Ingest]
+    J -->|Marker-based| L[Gene Set Enrichment]
+    K --> M[Validated Cell Types]
+    L --> M
+    
+    M --> N{Research Question?}
+    N -->|Find cell type markers| O[Differential Expression<br/>Cluster biomarkers]
+    N -->|Compare conditions| P[Differential Expression<br/>COVID vs Control]
+    N -->|Understand development| Q[Trajectory Inference<br/>PAGA, CellRank]
+    
+    O --> R[Biological Interpretation]
+    P --> S[Pathway Enrichment<br/>GSEA]
+    Q --> T[Lineage Analysis<br/>Driver genes]
+    
+    S --> R
+    T --> R
+    
+    R --> U[Publication/<br/>Further Experiments]
+    
+    style B fill:#e1f5ff
+    style F fill:#fff4e1
+    style G fill:#ffe1f5
+    style I fill:#e1ffe1
+    style O fill:#f5e1ff
+    style P fill:#f5e1ff
+    style Q fill:#ffe1e1
+    style R fill:#ffd700
+```
+
+## Step-by-Step Guide
+
+### 1. Quality Control {.step}
+
+::: {.panel-tabset}
+
+#### Purpose
+
+**Biological Questions:**
+
+- Which cells are high quality vs. damaged/dying?
+- Are there technical artifacts (doublets, empty droplets)?
+- Is there batch variation between samples?
+- Are samples well-prepared or contaminated?
+
+**Key Decisions:**
+
+- Mitochondrial % cutoff (typically <20%)
+- Minimum genes per cell (typically >200)
+- Ribosomal % minimum (typically >5%)
+- Sex balance across conditions
+- Cell cycle state distribution
+
+#### Inputs
+
+- Raw count matrices (`.h5` files from 10x)
+- Sample metadata (COVID vs. Control, patient IDs)
+
+#### Outputs
+
+- **Filtered AnnData object** (`scanpy_covid_qc.h5ad`)
+- **QC metrics** in `adata.obs`:
+  - `n_genes_by_counts`, `total_counts`
+  - `pct_counts_mt`, `pct_counts_ribo`, `pct_counts_hb`
+  - `doublet_scores`, `predicted_doublets`
+  - `percent_chrY`, `XIST-counts`
+  - `S_score`, `G2M_score`, `phase`
+
+#### Red Flags
+
+- 🚩 >50% cells filtered from any sample
+- 🚩 Bimodal MT% distribution
+- 🚩 Sex imbalance between conditions
+- 🚩 Doublet rate >10%
+- 🚩 Sample-specific quality issues
+
+:::
+
+---
+
+### 2. Dimensionality Reduction {.step}
+
+::: {.panel-tabset}
+
+#### Purpose
+
+**Biological Questions:**
+
+- What are the major sources of variation in the data?
+- How many principal components capture biological signal?
+- Can we visualize cell-to-cell relationships?
+- Are there distinct cell populations?
+- Do technical factors drive separation?
+
+**Key Decisions:**
+
+- Number of highly variable genes (typically 2000-3000)
+- Number of PCs to use (typically 30-50)
+- UMAP/tSNE parameters (neighbors, spread, perplexity)
+- Which covariates to regress out
+
+#### Inputs
+
+- QC-filtered data (`scanpy_covid_qc.h5ad`)
+- Normalized, log-transformed counts
+
+#### Outputs
+
+- **AnnData with embeddings** (`scanpy_covid_qc_dr.h5ad`)
+- **`adata.var.highly_variable`**: Boolean for HVGs
+- **`adata.obsm['X_pca']`**: PCA coordinates
+- **`adata.obsm['X_umap']`**: UMAP coordinates  
+- **`adata.obsm['X_tsne']`**: tSNE coordinates
+- **`adata.uns['pca']['variance_ratio']`**: Variance explained
+
+#### Red Flags
+
+- 🚩 First PC explains >30% variance (technical effect)
+- 🚩 No clear structure in UMAP/tSNE
+- 🚩 Samples separate completely (batch effect)
+- 🚩 QC metrics drive embeddings
+- 🚩 PCA loadings dominated by MT/ribo genes
+
+:::
+
+---
+
+### 3. Data Integration {.step}
+
+::: {.panel-tabset}
+
+#### Purpose
+
+**Biological Questions:**
+
+- Are observed differences biological or technical?
+- Do samples/batches confound biological signals?
+- Can we fairly compare COVID vs. Control?
+- Which cell types are present across all samples?
+
+**Key Decisions:**
+
+- Which integration method (BBKNN, Harmony, Combat, Scanorama)?
+- How aggressive should correction be?
+- Batch-aware vs. global HVG selection?
+- Validate integration success?
+
+#### Inputs
+
+- Dimensionality-reduced data (`scanpy_covid_qc_dr.h5ad`)
+- Batch/sample metadata
+
+#### Outputs
+
+- **Multiple integrated embeddings** (`scanpy_covid_qc_dr_int.h5ad`)
+- **`adata.obsm['X_pca_harmony']`**: Harmony-corrected PCA
+- **`adata.obsm['X_umap_bbknn']`**: BBKNN UMAP
+- **`adata.obsm['X_umap_combat']`**: Combat UMAP
+- **`adata.obsm['X_umap_scanorama']`**: Scanorama UMAP
+
+#### Method Selection
+
+| **Method** | **Best For** | **Modifies** |
+|------------|--------------|--------------|
+| **BBKNN** | Clustering, tight clusters | Neighbor graph |
+| **Harmony** | Trajectories, continuous processes | PCA space |
+| **Combat** | Differential expression | Gene expression |
+| **Scanorama** | Heterogeneous batches | Low-dim embedding |
+
+#### Red Flags
+
+- 🚩 Perfect mixing with no structure (over-correction)
+- 🚩 No mixing improvement (under-correction)
+- 🚩 Methods completely disagree
+- 🚩 COVID vs. Control signal lost
+
+:::
+
+---
+
+### 4. Clustering {.step}
+
+::: {.panel-tabset}
+
+#### Purpose
+
+**Biological Questions:**
+
+- How many distinct cell populations exist?
+- What are the major cell types?
+- Are there subtypes within cell types?
+- How are cell populations related?
+- Are clusters biologically meaningful or technical?
+
+**Key Decisions:**
+
+- Clustering resolution (0.4-1.4)
+- Use integrated or unintegrated data?
+- Merge over-split clusters?
+- Subcluster specific populations?
+
+#### Inputs
+
+- Integrated data (`scanpy_covid_qc_dr_int.h5ad`)
+- Neighbor graph
+
+#### Outputs
+
+- **Clustered data** (`scanpy_covid_qc_dr_int_cl.h5ad`)
+- **`adata.obs['leiden_0.4']`**: Coarse clusters
+- **`adata.obs['leiden_0.6']`**: Medium resolution
+- **`adata.obs['leiden_1.0']`**: Fine resolution
+- **`adata.obs['leiden_1.4']`**: Very fine resolution
+- **Cluster dendrograms**: Relationships
+
+#### Resolution Guide
+
+| **Resolution** | **Use Case** | **Typical # Clusters** |
+|----------------|--------------|------------------------|
+| 0.4 | Major lineages | 5-10 |
+| 0.6 | Cell types | 8-15 |
+| 1.0 | Subtypes | 12-20 |
+| 1.4 | Cell states | 15-30 |
+
+#### Red Flags
+
+- 🚩 Clusters defined by QC metrics, not biology
+- 🚩 Housekeeping genes as top markers
+- 🚩 Sample-specific clusters
+- 🚩 No clear marker genes
+- 🚩 Unrelated cell types in same cluster
+
+:::
+
+---
+
+### 5. Differential Gene Expression {.step}
+
+::: {.panel-tabset}
+
+#### Purpose
+
+**Biological Questions:**
+
+**Cluster biomarkers:**
+- What genes define each cell type?
+- Can we identify clusters biologically?
+- Which genes are specific vs. shared?
+
+**Condition comparisons:**
+- How does COVID-19 affect specific cell types?
+- Which pathways are activated/suppressed?
+- Are changes cell-type-specific or global?
+
+**Key Decisions:**
+
+- Statistical test (Wilcoxon recommended)
+- Fold-change and p-value cutoffs
+- Compare per cluster or globally?
+- How to handle patient variability?
+
+#### Inputs
+
+- Clustered data (`scanpy_covid_qc_dr_int_cl.h5ad`)
+- Normalized, log-transformed counts in `adata.raw`
+
+#### Outputs
+
+- **DGE results** (`scanpy_covid_qc_dr_scanorama_cl_dge.h5ad`)
+- **`adata.uns['rank_genes_groups']`**: All DE results
+  - `names`: Gene names
+  - `scores`: Test statistics
+  - `pvals_adj`: Adjusted p-values
+  - `logfoldchanges`: Effect sizes
+- **Pathway enrichment results**: GO/KEGG terms
+
+#### Two Modes
+
+**1. Cluster biomarkers:**
+```python
+sc.tl.rank_genes_groups(adata, 'leiden_0.6', method='wilcoxon')
+# Compares each cluster vs. all others
+```
+
+**2. Condition comparison:**
+```python
+# Subset to one cluster first
+monocytes = adata[adata.obs['cell_type']=='Monocytes']
+sc.tl.rank_genes_groups(monocytes, 'type', method='wilcoxon')
+# Compares COVID vs. Control within monocytes
+```
+
+#### Red Flags
+
+- 🚩 Sex chromosome genes as top DE (sex imbalance)
+- 🚩 Patient-specific genes (dominated by one individual)
+- 🚩 Housekeeping genes enriched (technical issues)
+- 🚩 No pathway enrichment (noisy gene list)
+- 🚩 Unbalanced cell numbers per sample
+
+:::
+
+---
+
+### 6. Cell Type Annotation {.step}
+
+::: {.panel-tabset}
+
+#### Purpose
+
+**Biological Questions:**
+
+- What cell types are present?
+- How confident are our annotations?
+- Are there novel/unexpected populations?
+- Do annotations agree across methods?
+
+**Key Decisions:**
+
+- Reference-based vs. marker-based?
+- Which reference dataset to use?
+- Which Celltypist model (Low vs. High resolution)?
+- Trust automatic predictions or manual curation?
+
+#### Inputs
+
+- Clustered data (`scanpy_covid_qc_dr_int_cl.h5ad`)
+- Reference dataset (pbmc3k or custom)
+- Marker gene lists
+
+#### Outputs
+
+- **Annotated data** (`scanpy_covid_qc_dr_int_cl_ct-ctrl13.h5ad`)
+- **Multiple prediction columns**:
+  - `louvain` (Ingest)
+  - `label_trans` (Scanorama label transfer)
+  - `predicted_labels` (Celltypist per-cell)
+  - `majority_voting` (Celltypist smoothed)
+  - `GS_overlap_pred` (Marker gene enrichment)
+
+#### Method Comparison
+
+| **Method** | **Strength** | **Limitation** |
+|------------|--------------|----------------|
+| **Label Transfer** | Uses integration, smooth | Needs good reference alignment |
+| **Ingest** | Fast, scalable | Query doesn't influence reference |
+| **Celltypist Pretrained** | Large training data, detailed | May predict irrelevant subtypes |
+| **Celltypist Custom** | Matched to your data | Limited by reference size |
+| **Marker Gene Sets** | Transparent, interpretable | Limited resolution |
+
+#### Red Flags
+
+- 🚩 Methods completely disagree
+- 🚩 Predictions scattered randomly
+- 🚩 Unexpected cell types (check doublets)
+- 🚩 Poor spatial coherence
+- 🚩 Predictions don't match markers
+
+:::
+
+---
+
+### 7. Trajectory Inference {.step}
+
+::: {.panel-tabset}
+
+#### Purpose
+
+**Biological Questions:**
+
+- How do cells differentiate/develop?
+- What are the lineage relationships?
+- Which genes drive fate decisions?
+- When do cells commit to specific fates?
+- What are the branch points?
+
+**Key Decisions:**
+
+- Which cells are initial/terminal states?
+- How many neighbors for trajectory graph?
+- Use pseudotime, RNA velocity, or both?
+- Which lineages to analyze in detail?
+
+#### Inputs
+
+- Annotated data with cell types
+- Batch-corrected embeddings
+- (Optional) RNA velocity data
+
+#### Outputs
+
+- **PAGA graph**: Global trajectory topology
+- **Pseudotime** (`dpt_pseudotime`): Developmental ordering
+- **Fate probabilities**: Probability for each terminal state
+- **Driver genes**: Genes correlated with each fate
+- **Gene trends**: Expression dynamics along trajectories
+
+#### When to Use
+
+**Appropriate for:**
+
+- ✅ Developmental systems (hematopoiesis, organogenesis)
+- ✅ Differentiation processes (iPSC → neurons)
+- ✅ Cell activation (resting → activated immune cells)
+- ✅ Disease progression (healthy → disease states)
+
+**Not appropriate for:**
+
+- ❌ Purely discrete cell types (no transitions)
+- ❌ Cross-sectional data without time component
+- ❌ When all cells are terminally differentiated
+
+#### Red Flags
+
+- 🚩 Cycles in trajectory (should be directional)
+- 🚩 Impossible connections (unrelated lineages)
+- 🚩 Driver genes not lineage-specific
+- 🚩 Pseudotime doesn't match biology
+- 🚩 Terminal states are progenitors
+
+:::
+
+---
+
+## Decision Trees
+
+### When to Use Each Analysis
+
+```{mermaid}
+flowchart TD
+    Start{What's your<br/>research question?}
+    
+    Start -->|Identify cell types| A[QC → DimRed → Cluster → Annotate]
+    Start -->|Compare conditions| B[QC → DimRed → Integrate → Cluster → Annotate → DGE]
+    Start -->|Find biomarkers| C[QC → DimRed → Cluster → DGE markers]
+    Start -->|Study development| D[QC → DimRed → Integrate → Cluster → Annotate → Trajectory]
+    
+    A --> A1{Novel cell types?}
+    A1 -->|Yes| A2[Marker-based annotation<br/>Manual curation]
+    A1 -->|No| A3[Reference-based<br/>Celltypist]
+    
+    B --> B1{Batch effects?}
+    B1 -->|Yes| B2[Integration required<br/>Choose method]
+    B1 -->|No| B3[Skip integration<br/>Direct to clustering]
+    
+    C --> C1{Per cluster or<br/>across conditions?}
+    C1 -->|Per cluster| C2[rank_genes_groups<br/>by cluster]
+    C1 -->|Across conditions| C3[Subset cluster<br/>Compare COVID/Ctrl]
+    
+    D --> D1{Linear or<br/>branching?}
+    D1 -->|Linear| D2[Simple pseudotime]
+    D1 -->|Branching| D3[PAGA + CellRank<br/>Fate probabilities]
+    
+    style Start fill:#ffd700
+    style A fill:#e1f5ff
+    style B fill:#ffe1f5
+    style C fill:#f5e1ff
+    style D fill:#ffe1e1
+```
+
+### Troubleshooting Guide
+
+```{mermaid}
+flowchart TD
+    Problem{What's wrong?}
+    
+    Problem -->|Poor clustering| P1{Check what?}
+    P1 -->|No structure in UMAP| P1a[Check QC, HVG selection<br/>May need more stringent filtering]
+    P1 -->|Clusters by sample| P1b[Batch effects<br/>Need integration]
+    P1 -->|Clusters by QC metrics| P1c[Technical artifacts<br/>Regress out or filter]
+    
+    Problem -->|Poor integration| P2{Symptoms?}
+    P2 -->|Still separated| P2a[Under-corrected<br/>Try different method or parameters]
+    P2 -->|No structure| P2b[Over-corrected<br/>Reduce correction strength]
+    P2 -->|Methods disagree| P2c[Unstable integration<br/>Check data quality]
+    
+    Problem -->|Poor annotation| P3{Issue?}
+    P3 -->|Methods disagree| P3a[Validate with markers<br/>Use consensus]
+    P3 -->|Unexpected types| P3b[Check for doublets<br/>Validate with literature]
+    P3 -->|No good markers| P3c[Try different reference<br/>Or manual annotation]
+    
+    Problem -->|Poor trajectory| P4{Issue?}
+    P4 -->|Impossible connections| P4a[Reduce n_neighbors<br/>Filter graph edges]
+    P4 -->|No clear path| P4b[Wrong root or terminals<br/>Check biology]
+    P4 -->|Pseudotime reversed| P4c[Wrong root cell<br/>Choose correct progenitor]
+    
+    style Problem fill:#ff6b6b
+    style P1a fill:#4ecdc4
+    style P1b fill:#4ecdc4
+    style P1c fill:#4ecdc4
+    style P2a fill:#95e1d3
+    style P2b fill:#95e1d3
+    style P2c fill:#95e1d3
+    style P3a fill:#f38181
+    style P3b fill:#f38181
+    style P3c fill:#f38181
+    style P4a fill:#aa96da
+    style P4b fill:#aa96da
+    style P4c fill:#aa96da
+```
+
+## Key Concepts Summary
+
+::: {.panel-tabset}
+
+### Clustering Groups Cells
+
+**NOT genes!**
+
+- Each **cell** is a data point with expression for ~20,000 genes
+- Clustering groups **cells** with similar expression profiles
+- Result: Cell type/state identification
+
+**Common confusion:** "Why isn't there a housekeeping gene cluster?"
+
+- Answer: ALL cells express housekeeping genes similarly
+- Clustering finds what makes cells **different**, not same
+- Housekeeping genes are typically excluded from clustering
+
+### Markers vs Drivers
+
+**Marker genes** (from DGE):
+
+- Identify what a cell type **is**
+- Define cell identity
+- Used for annotation
+- Example: CD3E marks T cells
+
+**Driver genes** (from trajectory):
+
+- Identify what **makes** cells become a type
+- Control differentiation/activation
+- Causal relationships (potentially)
+- Example: GATA1 drives erythrocyte fate
+
+Both are differentially expressed, but conceptually different!
+
+### Integration ≠ Batch Correction
+
+**Batch correction** (broader term):
+
+- Any method to remove technical variation
+- Can be done at various stages
+- Includes regression, normalization, etc.
+
+**Integration** (specific):
+
+- Aligning multiple datasets/samples
+- Creates shared embedding space
+- Specific algorithms (Harmony, Scanorama, etc.)
+- Subset of batch correction methods
+
+All integration is batch correction, but not all batch correction is integration.
+
+### Pseudotime ≠ Real Time
+
+**Pseudotime**:
+
+- Computational ordering of cells
+- Represents developmental **progress**
+- NOT hours/days of development
+- Relative, not absolute
+- Cannot compare across lineages directly
+
+**Real time**: Calendar time (which we don't have in snapshot data)
+
+Pseudotime is inferred from expression similarity, assuming similar cells are at similar stages.
+
+:::
+
+## Data Flow Through Analysis
+
+### What Changes at Each Step
+
+```{mermaid}
+flowchart LR
+    A["Raw Data<br/><b>X:</b> Raw counts<br/><b>obs:</b> Barcodes<br/><b>var:</b> Gene names"] 
+    
+    A -->|QC| B["Filtered Data<br/><b>X:</b> Raw counts<br/><b>obs:</b> +QC metrics<br/><b>var:</b> +MT/ribo flags<br/><small>Cells & genes filtered</small>"]
+    
+    B -->|DimRed| C["Processed Data<br/><b>X:</b> Scaled HVGs<br/><b>raw:</b> All genes normalized<br/><b>obsm:</b> PCA, UMAP, tSNE<br/><b>var:</b> +HVG flags"]
+    
+    C -->|Integration| D["Integrated Data<br/><b>obsm:</b> +Corrected embeddings<br/><b>obsp:</b> Corrected graphs<br/><small>Multiple integration results</small>"]
+    
+    D -->|Clustering| E["Clustered Data<br/><b>obs:</b> +Cluster labels<br/><b>uns:</b> +Dendrogram<br/><small>Multiple resolutions</small>"]
+    
+    E -->|Annotation| F["Annotated Data<br/><b>obs:</b> +Cell type labels<br/><b>obs:</b> +Prediction scores<br/><small>Multiple methods</small>"]
+    
+    F -->|DGE| G["Analysis Results<br/><b>uns:</b> +DE results<br/><b>uns:</b> +Pathways<br/><small>Biological insights</small>"]
+    
+    F -->|Trajectory| H["Trajectory Results<br/><b>obs:</b> +Pseudotime<br/><b>obsm:</b> +Fate probs<br/><b>uns:</b> +PAGA graph<br/><small>Developmental insights</small>"]
+    
+    style A fill:#ffe1e1
+    style B fill:#e1f5ff
+    style C fill:#fff4e1
+    style D fill:#ffe1f5
+    style E fill:#e1ffe1
+    style F fill:#f5e1ff
+    style G fill:#ffd700
+    style H fill:#ffd700
+```
+
+## Common Pitfalls
+
+::: {.callout-warning}
+## Critical Mistakes to Avoid
+
+### Data Management
+
+1. **❌ Forgetting to save raw counts**
+   - `adata.raw = adata` BEFORE normalization
+   - Can't recover raw counts after scaling
+
+2. **❌ Using wrong matrix for DGE**
+   - Use `adata.raw` (normalized, log-transformed, ALL genes)
+   - NOT `adata.X` (scaled, HVGs only)
+
+3. **❌ Comparing pseudotime across lineages**
+   - Pseudotime only meaningful within a lineage
+   - 0.5 in erythrocytes ≠ 0.5 in T cells
+
+### Statistical Issues
+
+4. **❌ Ignoring confounders**
+   - Sex, age, batch, sample quality
+   - Will create false DE genes
+
+5. **❌ Unbalanced sample sizes in DGE**
+   - One sample with 200 cells dominates over sample with 30 cells
+   - Subsample or use pseudobulk
+
+6. **❌ Multiple testing without correction**
+   - Testing 20,000 genes → many false positives
+   - Use FDR/Bonferroni correction
+
+### Biological Interpretation
+
+7. **❌ Over-interpreting cluster numbers**
+   - Clusters are computational, not absolute truth
+   - Cell types exist on continua
+
+8. **❌ Trusting single method**
+   - Integration: try multiple, check consensus
+   - Annotation: validate with markers
+   - Never rely on one algorithm alone
+
+9. **❌ Ignoring biological knowledge**
+   - Algorithms don't know biology
+   - Impossible cell types mean errors
+   - Literature validation essential
+
+:::
+
+## Analysis Checklist
+
+::: {.callout-note collapse="true"}
+## Expand for Complete Checklist
+
+### Before Starting
+
+- [ ] Understand biological system
+- [ ] Know expected cell types
+- [ ] Check for known confounders
+- [ ] Have positive/negative controls
+
+### After Each Step
+
+**QC:**
+
+- [ ] Reasonable cell numbers retained (>50%)
+- [ ] QC metrics look normal
+- [ ] Samples comparable quality
+- [ ] Doublets removed
+- [ ] Saved: `scanpy_covid_qc.h5ad`
+
+**Dimensionality Reduction:**
+
+- [ ] Elbow plot shows clear signal
+- [ ] PC loadings are interpretable
+- [ ] UMAP shows structure
+- [ ] Batch effects identified
+- [ ] Saved: `scanpy_covid_qc_dr.h5ad`
+
+**Integration:**
+
+- [ ] Samples mix within cell types
+- [ ] Cell types remain separated
+- [ ] Multiple methods agree
+- [ ] COVID signal preserved
+- [ ] Saved: `scanpy_covid_qc_dr_int.h5ad`
+
+**Clustering:**
+
+- [ ] Spatially coherent clusters
+- [ ] Clear marker genes
+- [ ] Biologically interpretable
+- [ ] Not driven by technical factors
+- [ ] Saved: `scanpy_covid_qc_dr_int_cl.h5ad`
+
+**Annotation:**
+
+- [ ] Consensus across methods
+- [ ] Markers support predictions
+- [ ] All major types identified
+- [ ] Documented uncertainties
+- [ ] Saved: `scanpy_covid_qc_dr_int_cl_ct.h5ad`
+
+**DGE/Trajectory:**
+
+- [ ] Results make biological sense
+- [ ] Validated with literature
+- [ ] Confounders addressed
+- [ ] Ready for publication/validation
+
+:::
+
+## File Dependencies
+
+### Output Files from Each Step
+
+```
+data/covid/results/
+├── scanpy_covid_qc.h5ad                    # QC output (Step 1)
+├── scanpy_covid_qc_dr.h5ad                 # +Dimensionality reduction (Step 2)
+├── scanpy_covid_qc_dr_bbknn.h5ad           # +BBKNN integration
+├── scanpy_covid_qc_dr_harmony.h5ad         # +Harmony integration
+├── scanpy_covid_qc_dr_combat.h5ad          # +Combat integration
+├── scanpy_covid_qc_dr_int.h5ad             # +All integrations (Step 3)
+├── scanpy_covid_qc_dr_int_cl.h5ad          # +Clustering (Step 4)
+├── scanpy_covid_qc_dr_int_cl_ct-ctrl13.h5ad # +Cell type prediction (Step 6)
+└── scanpy_covid_qc_dr_scanorama_cl_dge.h5ad # +DGE results (Step 5)
+```
+
+### Input-Output Relationships
+
+| **Notebook** | **Requires** | **Produces** |
+|--------------|--------------|--------------|
+| 01_qc | Raw H5 files | `*_qc.h5ad` |
+| 02_dimred | `*_qc.h5ad` | `*_qc_dr.h5ad` |
+| 03_integration | `*_qc_dr.h5ad` | `*_qc_dr_int.h5ad` |
+| 04_clustering | `*_qc_dr_int.h5ad` | `*_qc_dr_int_cl.h5ad` |
+| 05_dge | `*_qc_dr_int_cl.h5ad` | `*_cl_dge.h5ad` |
+| 06_celltyping | `*_qc_dr_int_cl.h5ad` | `*_cl_ct.h5ad` |
+| 07_trajectory | Annotated data | PAGA/pseudotime results |
+
+## Biological Questions → Analysis Path
+
+::: {.panel-tabset}
+
+### Cell Type Discovery
+
+**Question:** *What cell types are in my sample?*
+
+**Path:**
+
+1. ✅ **QC**: Remove low-quality cells
+2. ✅ **DimRed**: Visualize major populations
+3. ✅ **Clustering**: Separate populations
+4. ✅ **DGE (markers)**: Find defining genes
+5. ✅ **Annotation**: Assign biological identities
+
+**Skip:** Integration (unless multiple batches), Trajectory
+
+**Output:** Annotated cell type map
+
+---
+
+### Disease Response
+
+**Question:** *How does COVID-19 affect immune cells?*
+
+**Path:**
+
+1. ✅ **QC**: Ensure quality comparable between groups
+2. ✅ **DimRed**: Identify populations
+3. ✅ **Integration**: Remove batch effects (critical!)
+4. ✅ **Clustering**: Identify cell types
+5. ✅ **Annotation**: Label cell types
+6. ✅ **DGE (condition)**: Compare COVID vs. Control **per cell type**
+7. ✅ **Pathway enrichment**: Interpret gene lists
+
+**Don't skip:** Integration (samples may have batch effects)
+
+**Output:** Cell-type-specific disease signatures
+
+---
+
+### Biomarker Discovery
+
+**Question:** *What genes mark each cell type?*
+
+**Path:**
+
+1. ✅ **QC**: High-quality cells only
+2. ✅ **DimRed**: Separate populations
+3. ✅ **Clustering**: Define populations
+4. ✅ **DGE (cluster markers)**: Find top genes per cluster
+5. ✅ **Validation**: Check specificity on UMAP/dotplots
+
+**May skip:** Integration (if single batch), Annotation (exploratory)
+
+**Output:** Marker gene lists for cell types
+
+---
+
+### Developmental Biology
+
+**Question:** *How do stem cells differentiate into specific types?*
+
+**Path:**
+
+1. ✅ **QC**: Remove doublets (critical for trajectories)
+2. ✅ **DimRed**: Visualize differentiation continuum
+3. ✅ **Integration**: If multiple samples
+4. ✅ **Clustering**: Identify developmental stages
+5. ✅ **Annotation**: Label progenitors and mature types
+6. ✅ **Trajectory**: PAGA + pseudotime + CellRank
+7. ✅ **Driver genes**: Find fate determinants
+
+**Critical:** Must have continuous data (progenitors + intermediates + mature)
+
+**Output:** Developmental trajectories and driver genes
+
+:::
+
+## Quick Reference
+
+### Most Important Commands
+
+```python
+# QC
+sc.pp.calculate_qc_metrics(adata, qc_vars=['mt','ribo'])
+sc.pp.filter_cells(adata, min_genes=200)
+sc.pp.filter_genes(adata, min_cells=3)
+
+# Normalization & Scaling
+adata.raw = adata  # SAVE FIRST!
+sc.pp.normalize_total(adata, target_sum=1e4)
+sc.pp.log1p(adata)
+sc.pp.highly_variable_genes(adata, n_top_genes=2000)
+sc.pp.regress_out(adata, ['total_counts', 'pct_counts_mt'])
+sc.pp.scale(adata, max_value=10)
+
+# Dimensionality Reduction
+sc.pp.pca(adata)
+sc.pp.neighbors(adata, n_neighbors=20, n_pcs=30)
+sc.tl.umap(adata)
+
+# Integration
+import harmonypy as hm
+sc.external.pp.bbknn(adata, 'sample')
+# Or Harmony, Combat, Scanorama
+
+# Clustering
+sc.tl.leiden(adata, resolution=0.6)
+
+# DGE
+sc.tl.rank_genes_groups(adata, 'leiden', method='wilcoxon')
+
+# Annotation
+import celltypist
+predictions = celltypist.annotate(adata, model='Immune_All_High.pkl')
+
+# Trajectory
+sc.tl.paga(adata, groups='celltype')
+sc.tl.dpt(adata)  # pseudotime
+```
+
+### Common Parameter Values
+
+| **Parameter** | **Typical Range** | **Default** | **Notes** |
+|---------------|-------------------|-------------|-----------|
+| `min_genes` | 200-500 | 200 | Minimum genes per cell |
+| `min_cells` | 3-10 | 3 | Minimum cells per gene |
+| `pct_counts_mt` | <10-20% | <20% | MT% cutoff |
+| `n_top_genes` (HVG) | 1000-4000 | 2000 | Highly variable genes |
+| `n_pcs` | 20-50 | 30-50 | PCs for neighbors |
+| `n_neighbors` | 10-30 | 15-20 | KNN graph |
+| `resolution` | 0.4-1.4 | 1.0 | Leiden clustering |
+| `min_dist` (UMAP) | 0.1-0.5 | 0.3 | UMAP spread |
+
+### Visualization Cheat Sheet
+
+```python
+# Cell-level visualization
+sc.pl.umap(adata, color='gene_name')  # Gene expression
+sc.pl.umap(adata, color='cluster')    # Clusters
+sc.pl.umap(adata, color='sample')     # Batch effects
+
+# Cluster-level visualization
+sc.pl.dotplot(adata, genes, groupby='cluster')        # Expression + detection
+sc.pl.heatmap(adata, genes, groupby='cluster')        # Expression heatmap
+sc.pl.violin(adata, genes, groupby='cluster')         # Distributions
+sc.pl.matrixplot(adata, genes, groupby='cluster')     # Clean matrix
+
+# QC visualization
+sc.pl.violin(adata, ['n_genes', 'pct_counts_mt'], groupby='sample')
+sc.pl.scatter(adata, x='total_counts', y='pct_counts_mt', color='sample')
+
+# Trajectory visualization
+sc.pl.paga(adata, color='celltype')                   # Abstract graph
+sc.pl.draw_graph(adata, color='pseudotime')           # Cell-level trajectory
+```
+
+## Further Resources
+
+::: {.callout-tip}
+## Continue Learning
+
+**Documentation:**
+
+- [Scanpy Tutorials](https://scanpy-tutorials.readthedocs.io/)
+- [Single-cell Best Practices](https://www.sc-best-practices.org/)
+- [CellRank Documentation](https://cellrank.readthedocs.io/)
+- [Celltypist](https://www.celltypist.org/)
+
+**Key Papers:**
+
+- Batch integration: Luecken et al., 2021 (Nat Methods)
+- Clustering benchmarks: Duo et al., 2018 (F1000Research)
+- Trajectory inference: Saelens et al., 2019 (Nat Biotechnol)
+- PAGA: Wolf et al., 2019 (Genome Biol)
+
+**When You Need Help:**
+
+- [Scanpy Discourse](https://discourse.scverse.org/)
+- [Biostars](https://www.biostars.org/)
+- [Bioconductor Support](https://support.bioconductor.org/)
+:::
+
+---
+
+**Remember:** Single-cell analysis is iterative. You'll often need to go back and adjust parameters based on downstream results. Keep notes on your decisions and always validate computationally-derived conclusions with biological knowledge!

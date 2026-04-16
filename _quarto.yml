@@ -3,6 +3,7 @@ project:
   output-dir: _output
   render:
     - index.qmd
+    - overview.qmd
     - notebooks/quarto_annotated/scanpy_01_qc.qmd
     - notebooks/quarto_annotated/scanpy_02_dimred.qmd
     - notebooks/quarto_annotated/scanpy_03_integration.qmd
@@ -17,6 +18,8 @@ website:
     left:
       - text: "Home"
         href: index.qmd
+      - text: "Overview"
+        href: overview.qmd
       - text: "Tutorials"
         menu:
           - text: "Quality Control"
