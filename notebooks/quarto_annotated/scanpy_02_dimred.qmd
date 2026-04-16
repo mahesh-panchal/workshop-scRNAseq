@@ -115,7 +115,7 @@ This removes constitutively expressed genes and very lowly expressed genes, focu
 #| label: hvg
 # compute variable genes
 sc.pp.highly_variable_genes(adata, min_mean=0.0125, max_mean=3, min_disp=0.5)
-print("Highly variable genes: %d"%sum(adata.var.highly_variable))
+print("Highly variable genes: %d"%adata.var.highly_variable.sum())
 
 #plot variable genes
 sc.pl.highly_variable_genes(adata)
